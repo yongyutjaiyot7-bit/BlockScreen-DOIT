@@ -1,0 +1,16 @@
+{
+  "name": "block-screen",
+  "version": "1.0.0",
+  "description": "BLOCK SCREEN - ระบบจัดการบล็อกสกรีนพิมพ์",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "sql.js": "^1.12.0"
+  }
+}
