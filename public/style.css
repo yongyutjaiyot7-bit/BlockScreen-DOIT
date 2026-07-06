@@ -239,6 +239,19 @@ tr.row-red td{background:var(--red-soft);}
 .step.active{background:linear-gradient(120deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 3px 8px rgba(2,132,199,.3);}
 .step.done{background:var(--accent-soft);color:var(--accent);}
 
+/* FORM TABLE (Clean/Coat form per spec) */
+.ftable{width:100%;border-collapse:collapse;font-size:.9rem;}
+.ftable td{border:1px solid var(--border);padding:.55rem .65rem;vertical-align:middle;}
+.ftable .lbl{background:#f8fafc;font-weight:700;width:42%;color:var(--text);}
+.ftable .auto{background:var(--green-soft);color:#166534;font-weight:700;}
+.ftable .in{background:#fefce8;}
+.ftable .in select,.ftable .in input{background:#fff;}
+.emp-name{font-size:.82rem;font-weight:700;margin-top:.35rem;min-height:1em;}
+.blk-row{display:flex;align-items:center;gap:.5rem;padding:.45rem .2rem;border-bottom:1px solid var(--border);}
+.blk-row:last-child{border-bottom:none;}
+.blk-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+  font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
 /* SEARCH RESULT */
 .history-entry{padding:.55rem 0;border-bottom:1px solid var(--border);font-size:.82rem;}
 .history-entry:last-child{border-bottom:none;}

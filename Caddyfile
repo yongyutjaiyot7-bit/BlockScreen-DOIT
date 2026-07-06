@@ -1,0 +1,33 @@
+# เปลี่ยน 10.224.0.37 เป็น IP ของ server คุณ (ทุกจุด)
+{
+	default_sni 10.224.0.37
+	auto_https disable_redirects
+}
+
+# ── HTTP พอร์ต 80 ── (ต้องปิด apache ก่อน: systemctl disable --now apache2)
+# ให้มือถือเข้าหน้า setup + โหลดใบรับรองได้ โดยไม่ต้องมี TLS
+http://10.224.0.37 {
+	handle /root.crt {
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=blockscreen-root.crt"
+		root * /data/caddy/pki/authorities/local
+		file_server
+	}
+	handle {
+		reverse_proxy blockscreen:3000
+	}
+}
+
+# ── HTTPS พอร์ต 443 ── (แอปหลัก + กล้องสแกน QR)
+https://10.224.0.37 {
+	tls internal
+	handle /root.crt {
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=blockscreen-root.crt"
+		root * /data/caddy/pki/authorities/local
+		file_server
+	}
+	handle {
+		reverse_proxy blockscreen:3000
+	}
+}

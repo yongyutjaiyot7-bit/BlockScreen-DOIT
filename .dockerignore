@@ -1,0 +1,8 @@
+node_modules
+data
+.git
+*.tgz
+BlockScreen-mobile.html
+BlockScreen-Android*
+*.zip
+android

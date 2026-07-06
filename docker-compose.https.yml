@@ -1,0 +1,37 @@
+# BLOCK SCREEN — stack พร้อม HTTPS (แนะนำสำหรับ iOS + PWA + กล้องสแกน QR)
+# Caddy ออกใบรับรอง TLS ให้อัตโนมัติ (internal CA) และเสิร์ฟไฟล์ root.crt ที่ /root.crt
+#
+# ตั้งค่าก่อนใช้: แก้ IP ในไฟล์ Caddyfile ให้ตรงกับ server
+# รัน:  docker compose -f docker-compose.https.yml up -d --build
+#
+# หมายเหตุ: ใช้เฉพาะพอร์ต 443 (ไม่ใช้ 80 เพื่อเลี่ยงชนกับเว็บเซิร์ฟเวอร์อื่น เช่น apache)
+services:
+  blockscreen:
+    build: .
+    container_name: blockscreen
+    restart: unless-stopped
+    expose:
+      - "3000"
+    volumes:
+      - blockscreen-data:/app/data
+    environment:
+      - TZ=Asia/Bangkok
+
+  caddy:
+    image: caddy:2
+    container_name: blockscreen-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP: หน้า setup + ดาวน์โหลดใบรับรอง (ต้องปิด apache ก่อน)
+      - "443:443"   # HTTPS: แอปหลัก + กล้องสแกน QR
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - blockscreen
+
+volumes:
+  blockscreen-data:
+  caddy-data:
+  caddy-config:

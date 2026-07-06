@@ -1,0 +1,18 @@
+# BLOCK SCREEN — basic stack (HTTP, สำหรับใช้ใน LAN องค์กร)
+# ใช้กับ Portainer: Stacks > Add stack > อัปโหลด/วางไฟล์นี้
+# หรือบน host:  docker compose up -d --build
+services:
+  blockscreen:
+    build: .
+    # ถ้า build image ไว้แล้ว ใช้ image แทน build ได้:  image: blockscreen:latest
+    container_name: blockscreen
+    restart: unless-stopped
+    ports:
+      - "3000:3000"          # เข้าใช้งานที่ http://<IP เครื่อง>:3000
+    volumes:
+      - blockscreen-data:/app/data   # ฐานข้อมูลถูกเก็บถาวรที่ volume นี้
+    environment:
+      - TZ=Asia/Bangkok
+
+volumes:
+  blockscreen-data:

@@ -68,7 +68,7 @@ function pageHome(app) {
   app.innerHTML = `
     <div class="topnav"><h1>📦 BLOCK SCREEN</h1><small style="color:var(--muted)">${todayStr()}</small></div>
     <div class="home-grid">
-      <div class="home-card" onclick="renderPage('clean')">
+      <div class="home-card" onclick="renderPage('cleanNew')">
         <div class="hc-icon">🧹</div>
         <div class="hc-title">ล้าง/โค๊ตบล็อก</div>
         <div class="hc-sub">บันทึกการล้างและโค๊ต</div>
@@ -117,89 +117,82 @@ async function pageClean(app) {
     </div>`;
 }
 
+const MAX_CLEAN_BLOCKS = 100;
 function pageCleanNew(app) {
-  const blocks = [];
+  window._cleanBlocks = [];
+  const stepOpts = master.process_steps.map(s=>`<option>${s.name}</option>`).join('');
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
     <div class="topnav">
-      <button class="back-btn" onclick="renderPage('clean')">‹</button>
-      <h1>🧹 บันทึกการล้าง</h1>
+      <button class="back-btn" onclick="renderPage('home')">‹</button>
+      <h1>🧹 ล้าง/โค๊ตบล็อก</h1>
+      <button class="btn-primary btn-sm" onclick="renderPage('clean')">📋 รายการ</button>
     </div>
     <div class="page">
+      <datalist id="empList">${empOpts}</datalist>
+
       <div class="card">
-        <div class="grid2">
-          <div class="form-group">
-            <label>วันที่</label>
-            <input type="date" id="c_date" value="${todayISO()}"/>
-          </div>
-          <div class="form-group">
-            <label>ขั้นตอน</label>
-            <select id="c_step">
-              ${master.process_steps.map(s=>`<option>${s.name}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="grid2">
-          <div class="form-group">
-            <label>รหัสพนักงาน คนที่ 1</label>
-            <div class="row gap-sm">
-              <input id="c_emp1" placeholder="รหัส" class="flex1" oninput="lookupEmp(this,'c_emp1_name')"/>
-              <button class="scan-btn" onclick="openScan(v=>{$('c_emp1').value=v;lookupEmp($('c_emp1'),'c_emp1_name')})">📷</button>
-            </div>
-            <small id="c_emp1_name" class="muted"></small>
-          </div>
-          <div class="form-group">
-            <label>รหัสพนักงาน คนที่ 2</label>
-            <div class="row gap-sm">
-              <input id="c_emp2" placeholder="รหัส" class="flex1" oninput="lookupEmp(this,'c_emp2_name')"/>
-              <button class="scan-btn" onclick="openScan(v=>{$('c_emp2').value=v;lookupEmp($('c_emp2'),'c_emp2_name')})">📷</button>
-            </div>
-            <small id="c_emp2_name" class="muted"></small>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>หมายเหตุ</label>
-          <textarea id="c_remark" rows="2"></textarea>
-        </div>
+        <div class="card-title">ขั้นตอนการล้างบล็อกสกรีน / โค๊ตบล็อก</div>
+        <table class="ftable">
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">ขั้นตอน</td><td class="in"><select id="c_step">${stepOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1</td><td class="in">
+            <div class="row gap-sm"><input id="c_emp1" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'c_emp1_name')"/><button class="scan-btn" onclick="openScan(v=>{$('c_emp1').value=v;lookupEmp($('c_emp1'),'c_emp1_name')})">📷</button></div>
+            <div id="c_emp1_name" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 2</td><td class="in">
+            <div class="row gap-sm"><input id="c_emp2" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'c_emp2_name')"/><button class="scan-btn" onclick="openScan(v=>{$('c_emp2').value=v;lookupEmp($('c_emp2'),'c_emp2_name')})">📷</button></div>
+            <div id="c_emp2_name" class="emp-name"></div></td></tr>
+        </table>
       </div>
 
       <div class="card">
-        <div class="row gap-sm mb">
-          <span class="card-title flex1" style="margin:0">เลขที่บล็อก</span>
-          <button class="scan-btn" onclick="openScan(v=>addCleanBlock(v))">📷 สแกน</button>
+        <div class="row gap-sm" style="align-items:center">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">เลขที่บล็อก (<span id="c_block_count">0</span>/${MAX_CLEAN_BLOCKS})</span>
+          <button class="scan-btn" onclick="openScan(v=>addCleanBlock(v),{continuous:true})">📷 สแกนต่อเนื่อง</button>
         </div>
+        <p class="scan-hint" style="margin:.3rem 0 .6rem">สแกน QR ต่อเนื่องได้สูงสุด ${MAX_CLEAN_BLOCKS} หมายเลข · เลขห้ามซ้ำ</p>
         <div class="row gap-sm mb">
-          <input id="c_block_input" placeholder="พิมพ์เลขบล็อก" class="flex1" onkeydown="if(event.key==='Enter')addCleanBlock($('c_block_input').value)"/>
+          <input id="c_block_input" placeholder="พิมพ์เลขบล็อก" class="flex1" onkeydown="if(event.key==='Enter'){addCleanBlock($('c_block_input').value);event.preventDefault();}"/>
           <button class="btn-secondary" onclick="addCleanBlock($('c_block_input').value)">เพิ่ม</button>
         </div>
         <div id="c_block_list"></div>
       </div>
 
-      <button class="btn-primary" style="width:100%" onclick="submitClean()">ส่ง (SUBMIT)</button>
+      <div class="card">
+        <div class="form-group"><label>หมายเหตุ</label><textarea id="c_remark" rows="2" placeholder="ระบุเพิ่มเติม (ถ้ามี)"></textarea></div>
+      </div>
+
+      <button class="btn-primary" style="width:100%;font-size:1.05rem;padding:.9rem" onclick="submitClean()">ส่ง</button>
     </div>`;
 
-  window._cleanBlocks = blocks;
   window.addCleanBlock = (val) => {
-    val = val?.trim();
+    val = (val || '').trim();
     if (!val) return;
-    if (window._cleanBlocks.includes(val)) { toast('เลขบล็อกซ้ำ!','red'); return; }
+    if (window._cleanBlocks.includes(val)) { toast('เลขบล็อกซ้ำ: ' + val, 'red'); return; }
+    if (window._cleanBlocks.length >= MAX_CLEAN_BLOCKS) { toast('ครบ ' + MAX_CLEAN_BLOCKS + ' หมายเลขแล้ว', 'red'); return; }
     window._cleanBlocks.push(val);
     $('c_block_input').value = '';
     renderCleanBlocks();
   };
   window.removeCleanBlock = (i) => { window._cleanBlocks.splice(i,1); renderCleanBlocks(); };
   function renderCleanBlocks() {
-    $('c_block_list').innerHTML = window._cleanBlocks.map((b,i)=>`
-      <div class="row gap-sm" style="padding:.3rem 0;border-bottom:1px solid var(--border)">
-        <span class="flex1">${b}</span>
-        <button class="btn-icon" onclick="removeCleanBlock(${i})">🗑️</button>
-      </div>`).join('') || '<p class="no-data">ยังไม่มีบล็อก</p>';
+    $('c_block_count').textContent = window._cleanBlocks.length;
+    $('c_block_list').innerHTML = window._cleanBlocks.length
+      ? window._cleanBlocks.map((b,i)=>`
+        <div class="blk-row">
+          <span class="blk-i">${i+1}</span>
+          <span class="flex1"><strong>${b}</strong></span>
+          <button class="btn-icon" onclick="removeCleanBlock(${i})">🗑️</button>
+        </div>`).join('')
+      : '<p class="no-data">ยังไม่มีบล็อก — กดสแกนต่อเนื่อง หรือพิมพ์เพิ่ม</p>';
   }
   renderCleanBlocks();
 
   window.submitClean = async () => {
     if (window._cleanBlocks.length === 0) { toast('กรุณาเพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
     const body = {
-      date: $('c_date').value,
+      date: todayISO(),
       process_step: $('c_step').value,
       emp1: $('c_emp1').value.trim()||null,
       emp2: $('c_emp2').value.trim()||null,
@@ -1066,10 +1059,18 @@ window.exportData = exportData;
 // ══════════════════════════════════════════════════════
 //  QR SCANNER
 // ══════════════════════════════════════════════════════
-function openScan(cb) {
+let scanContinuous = false, scanSeen = null, scanLast = 0;
+function openScan(cb, opts = {}) {
   scanCallback = cb;
+  scanContinuous = !!opts.continuous;
+  scanSeen = new Set();
+  scanLast = 0;
   document.getElementById('scanModal').classList.remove('hidden');
   document.getElementById('scanManual').value = '';
+  const hint = document.querySelector('.scan-hint');
+  if (hint) hint.textContent = scanContinuous
+    ? 'สแกนต่อเนื่องได้เลย (เลขซ้ำจะข้ามอัตโนมัติ) · หรือพิมพ์ค่าด้านล่าง:'
+    : 'หรือพิมพ์ด้วยตนเอง:';
   startCameraScan();
 }
 
@@ -1110,14 +1111,14 @@ async function startCameraScan() {
       try {
         if (hasBD) {
           const codes = await scanDetector.detect(video);
-          if (codes.length) return finishScan(codes[0].rawValue);
+          if (codes.length) { finishScan(codes[0].rawValue); if (!scanContinuous) return; }
         } else if (window.jsQR && video.videoWidth) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-          if (code && code.data) return finishScan(code.data);
+          if (code && code.data) { finishScan(code.data); if (!scanContinuous) return; }
         }
       } catch {}
       requestAnimationFrame(loop);
@@ -1132,6 +1133,18 @@ async function startCameraScan() {
 function finishScan(val) {
   val = String(val || '').trim();
   if (!val) return;
+  if (scanContinuous) {
+    const now = Date.now();
+    if (now - scanLast < 600) return;      // debounce same-frame repeats
+    if (scanSeen.has(val)) { scanLast = now; return; }  // already scanned this session
+    scanLast = now;
+    scanSeen.add(val);
+    scanCallback && scanCallback(val);
+    if (navigator.vibrate) navigator.vibrate(60);
+    const hint = document.querySelector('.scan-hint');
+    if (hint) hint.textContent = `✅ เพิ่ม ${val} (รวม ${scanSeen.size}) · สแกนต่อได้เลย หรือกด ✕ เมื่อเสร็จ`;
+    return;                                 // keep scanning
+  }
   closeScan();
   scanCallback && scanCallback(val);
 }
@@ -1142,8 +1155,18 @@ function stopCamera() {
 
 window.closeScan = closeScan;
 window.manualScan = () => {
-  const val = document.getElementById('scanManual').value.trim();
+  const inp = document.getElementById('scanManual');
+  const val = inp.value.trim();
   if (!val) return;
+  if (scanContinuous) {
+    inp.value = '';
+    if (scanSeen.has(val)) { toast('เลขซ้ำ', 'red'); return; }
+    scanSeen.add(val);
+    scanCallback && scanCallback(val);
+    const hint = document.querySelector('.scan-hint');
+    if (hint) hint.textContent = `✅ เพิ่ม ${val} (รวม ${scanSeen.size}) · พิมพ์/สแกนต่อได้`;
+    return;
+  }
   closeScan();
   scanCallback && scanCallback(val);
 };
