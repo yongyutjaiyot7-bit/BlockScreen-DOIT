@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   status TEXT DEFAULT 'available', location TEXT, current_dept TEXT DEFAULT 'BL', updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS clean_docs (
-  doc_no TEXT PRIMARY KEY, date TEXT NOT NULL, process_step TEXT NOT NULL,
+  doc_no TEXT PRIMARY KEY, date TEXT NOT NULL, block_no TEXT, size_label TEXT, process_step TEXT NOT NULL,
   emp1_code TEXT, emp2_code TEXT, remarks TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS clean_doc_blocks (id TEXT PRIMARY KEY, doc_no TEXT NOT NULL, block_no TEXT NOT NULL);
@@ -128,6 +128,9 @@ CREATE TABLE IF NOT EXISTS receive_inspections (
   frame_check_pass INTEGER DEFAULT 0, created_at TEXT NOT NULL
 );
 `);
+// Migrations for existing databases (ignore if column already exists)
+try { getDb().run('ALTER TABLE clean_docs ADD COLUMN block_no TEXT'); } catch {}
+try { getDb().run('ALTER TABLE clean_docs ADD COLUMN size_label TEXT'); } catch {}
 save();
 
 // ── Seed master data (from Excel: 79f768a7-...Mobile_barcode_BL2.1.xlsx) ──
@@ -259,22 +262,32 @@ export function getMasterData() {
   };
 }
 
-// ── MODULE 1: Clean ──
+// ── MODULE 1: Clean (DATA BASE 1 — one document row per block) ──
+function empFirstName(code) {
+  if (!code) return '';
+  const e = get('SELECT firstname FROM employees WHERE emp_code=?', [code]);
+  return e ? e.firstname : code;
+}
 export function createCleanDoc(data) {
-  const doc_no = nextDocNo('', 'clean_docs');
   const ts = now();
-  run('INSERT INTO clean_docs(doc_no,date,process_step,emp1_code,emp2_code,remarks,created_at) VALUES(?,?,?,?,?,?,?)',
-    [doc_no, data.date||ts.slice(0,10), data.process_step||'', data.emp1||null, data.emp2||null, data.remarks||null, ts]);
-  (data.blocks||[]).forEach(b => run('INSERT INTO clean_doc_blocks(id,doc_no,block_no) VALUES(?,?,?)', [uuid(),doc_no,b]));
-  return getCleanDoc(doc_no);
+  const date = data.date || ts.slice(0, 10);
+  const created = [];
+  (data.blocks || []).forEach(bno => {
+    const doc_no = nextDocNo('', 'clean_docs');
+    const blk = getBlock(bno);
+    run('INSERT INTO clean_docs(doc_no,date,block_no,size_label,process_step,emp1_code,emp2_code,remarks,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+      [doc_no, date, bno, blk?.size_label || null, data.process_step || '', data.emp1 || null, data.emp2 || null, data.remarks || null, ts]);
+    created.push(doc_no);
+  });
+  return { count: created.length, doc_nos: created, doc_no: created[0] || null };
 }
 export function listCleanDocs() {
-  return all('SELECT c.*, (SELECT COUNT(*) FROM clean_doc_blocks WHERE doc_no=c.doc_no) as block_count FROM clean_docs c ORDER BY c.created_at DESC LIMIT 100');
+  const rows = all('SELECT * FROM clean_docs ORDER BY doc_no DESC LIMIT 500');
+  rows.forEach(r => { r.emp1_name = empFirstName(r.emp1_code); r.emp2_name = empFirstName(r.emp2_code); });
+  return rows;
 }
 export function getCleanDoc(doc_no) {
-  const doc = get('SELECT * FROM clean_docs WHERE doc_no=?', [doc_no]);
-  if (doc) doc.blocks = all('SELECT * FROM clean_doc_blocks WHERE doc_no=?', [doc_no]);
-  return doc;
+  return get('SELECT * FROM clean_docs WHERE doc_no=?', [doc_no]);
 }
 
 // ── MODULE 2: Press request ──

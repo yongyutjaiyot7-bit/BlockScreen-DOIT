@@ -252,6 +252,12 @@ tr.row-red td{background:var(--red-soft);}
 .blk-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent);
   font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;}
 
+/* DATA BASE 1 table */
+table.db1 th,table.db1 td{white-space:nowrap;text-align:left;}
+table.db1 td.ctr{text-align:center;}
+table.db1 .stepcol{max-width:96px;white-space:normal;font-size:.72rem;line-height:1.2;}
+.mark1{display:inline-block;min-width:20px;font-weight:800;color:var(--red);}
+
 /* SEARCH RESULT */
 .history-entry{padding:.55rem 0;border-bottom:1px solid var(--border);font-size:.82rem;}
 .history-entry:last-child{border-bottom:none;}

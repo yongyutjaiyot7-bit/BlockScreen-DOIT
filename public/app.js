@@ -95,24 +95,41 @@ function pageHome(app) {
 //  MODULE 1 – ล้าง/โค๊ตบล็อก
 // ══════════════════════════════════════════════════════
 async function pageClean(app) {
-  const { data: docs } = await api('/api/clean');
+  const { data: rows } = await api('/api/clean');
+  const steps = master.process_steps;
+  const cols = 4 + steps.length + 3;
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('home')">‹</button>
-      <h1>🧹 ล้าง/โค๊ตบล็อก</h1>
-      <button class="btn-primary btn-sm" onclick="renderPage('cleanNew')">+ สร้าง</button>
+      <h1>🧹 DATA BASE 1</h1>
+      <button class="btn-primary btn-sm" onclick="renderPage('cleanNew')">+ เพิ่ม</button>
     </div>
     <div class="page">
       <div class="card">
-        <div class="card-title">บันทึกการล้าง (DB1)</div>
-        ${docs.length === 0 ? `<p class="no-data">ยังไม่มีรายการ</p>` : docs.map(d => `
-          <div class="list-item" onclick="renderPage('cleanDetail',{doc_no:'${d.doc_no}'})">
-            <div>
-              <div class="list-title">${d.doc_no}</div>
-              <div class="list-sub">${d.date} · ${d.process_step} · ${d.block_count} บล็อก</div>
-            </div>
-            <div class="list-right"><span class="chevron">›</span></div>
-          </div>`).join('')}
+        <div class="card-title">บันทึกการล้างบล็อกสกรีน</div>
+        <div class="table-scroll">
+          <table class="db1">
+            <thead><tr>
+              <th>เลขที่เอกสาร</th><th>วันที่</th><th>เลขที่บล็อก</th><th>ขนาดบล็อก</th>
+              ${steps.map(s=>`<th class="stepcol">${s.name}</th>`).join('')}
+              <th>พนักงานคนที่ 1</th><th>พนักงานคนที่ 2</th><th>หมายเหตุ</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length===0
+                ? `<tr><td colspan="${cols}" class="no-data">ยังไม่มีรายการ — กด "+ เพิ่ม" เพื่อบันทึก</td></tr>`
+                : rows.map(r=>`<tr>
+                    <td><strong>${r.doc_no}</strong></td>
+                    <td>${fmtDate(r.date)}</td>
+                    <td><strong>${r.block_no||'-'}</strong></td>
+                    <td>${r.size_label||'-'}</td>
+                    ${steps.map(s=>`<td class="ctr">${r.process_step===s.name?'<span class="mark1">1</span>':'-'}</td>`).join('')}
+                    <td>${r.emp1_name||'-'}</td>
+                    <td>${r.emp2_name||'-'}</td>
+                    <td>${r.remarks||'-'}</td>
+                  </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>`;
 }
@@ -200,7 +217,7 @@ function pageCleanNew(app) {
       blocks: window._cleanBlocks,
     };
     const { data } = await api('/api/clean','POST',body);
-    toast('บันทึกสำเร็จ: '+data.doc_no);
+    toast(`บันทึกสำเร็จ ${data.count} รายการ (${data.doc_nos[0]} – ${data.doc_nos[data.doc_nos.length-1]})`);
     renderPage('clean');
   };
 }
@@ -1206,6 +1223,11 @@ function infoRow(label, value) {
   return `<div class="form-group"><label>${label}</label><div style="font-size:.9rem">${value}</div></div>`;
 }
 
+function fmtDate(iso) {
+  if (!iso) return '-';
+  const p = String(iso).slice(0,10).split('-');
+  return p.length === 3 ? `${+p[2]}/${+p[1]}/${p[0]}` : iso;
+}
 function todayISO() { return new Date().toISOString().slice(0,10); }
 function todayStr() {
   return new Date().toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'});
