@@ -18,6 +18,5 @@ ENV NODE_ENV=production \
     DB_PATH=/app/data/blockscreen.db
 
 EXPOSE 3000
-VOLUME ["/app/data"]
 
 CMD ["node", "src/server.js"]
