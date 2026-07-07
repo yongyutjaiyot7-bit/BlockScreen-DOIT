@@ -288,12 +288,39 @@ const PRESS_VIEWS = {
   inspect: { title:'ตรวจรับ',          status:'pending',   canCreate:false, empty:'ไม่มีบล็อกรอตรวจรับ' },
   store:   { title:'จัดเก็บ',          status:'inspected', canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
 };
+function pressFileName(d) {
+  // วัน/เดือน/ปี & หน่วยงาน & เลขที่บล็อกเดิม & เลขที่เอกสาร
+  return `${fmtDatePad(d.date)}&${d.dept}&${d.old_block_no}&${d.doc_no}`;
+}
 async function pagePress(app, { filter = 'all' } = {}) {
   const view = PRESS_VIEWS[filter] || PRESS_VIEWS.all;
   const q = view.status ? `/api/press?status=${view.status}` : '/api/press';
   const { data: docs } = await api(q);
   const statusLabel = { pending:'รอดำเนินการ', inspected:'อัดแล้ว', stored:'จัดเก็บแล้ว' };
   const statusBadge = { pending:'badge-yellow', inspected:'badge-blue', stored:'badge-green' };
+
+  // "บล็อกรออัด" — แสดงเป็น Folder (ชื่อไฟล์ = วันที่&หน่วยงาน&บล็อกเดิม&เลขเอกสาร)
+  if (filter === 'pending') {
+    app.innerHTML = `
+      <div class="topnav">
+        <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
+        <h1>บล็อกรออัด</h1>
+      </div>
+      <div class="page">
+        <div class="folder-tag">📁 Folder บล็อกรออัด</div>
+        <div class="folder-box">
+          ${docs.length===0
+            ? `<p class="no-data">${view.empty}</p>`
+            : docs.map(d=>`
+              <div class="folder-row" onclick="renderPage('pressDetail',{doc_no:'${d.doc_no}'})">
+                ${pressFileName(d)}
+              </div>`).join('')}
+        </div>
+        <div class="folder-done">จบขั้นตอนร้องขออัดบล็อก</div>
+      </div>`;
+    return;
+  }
+
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
@@ -319,102 +346,105 @@ async function pagePress(app, { filter = 'all' } = {}) {
 }
 
 function pagePressNew(app) {
-  const films = [{internal_code:'',color_order:'',revision:'',fabric_no:''}];
+  window._pressFilms = [
+    {internal_code:'',color_order:'',revision:'',fabric_no:''},
+  ];
+  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id} – ${d.name}</option>`).join('');
+  const probOpts = master.problems.map(p=>`<option>${p.name}</option>`).join('');
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
     <div class="topnav">
-      <button class="back-btn" onclick="renderPage('press')">‹</button>
+      <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
       <h1>ร้องขออัดบล็อก</h1>
     </div>
     <div class="page">
-      <div class="steps">
-        <div class="step active">1.ร้องขอ</div>
-        <div class="step">2.บล็อกรออัด</div>
-        <div class="step">3.ตรวจรับ</div>
-        <div class="step">4.จัดเก็บ</div>
+      <datalist id="empList">${empOpts}</datalist>
+
+      <div class="ptabs">
+        <button class="ptab active">ร้องขออัดบล็อก</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'pending'})">บล็อกรออัด</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'inspect'})">ตรวจรับ</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'store'})">จัดเก็บ</button>
       </div>
+
       <div class="card">
-        <div class="grid2">
-          <div class="form-group">
-            <label>วันที่</label><input type="date" id="p_date" value="${todayISO()}"/>
-          </div>
-          <div class="form-group">
-            <label>เวลา</label><input type="time" id="p_time" value="${nowTime()}"/>
-          </div>
+        <table class="ftable">
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
+          <tr><td class="lbl">หน่วยงาน</td><td class="in"><select id="p_dept">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">เลขที่บล็อกเดิม</td><td class="in">
+            <div class="row gap-sm"><input id="p_old_block" placeholder="สแกน / พิมพ์" class="flex1" oninput="lookupFrame(this.value)"/><button class="scan-btn" onclick="openScan(v=>{$('p_old_block').value=v;lookupFrame(v);})">📷</button></div></td></tr>
+          <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="p_framesize">-</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="row gap-sm" style="align-items:center">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">ข้อมูลบล็อก (ฟิล์ม)</span>
+          <button class="btn-sm btn-secondary" onclick="addFilmRow()">+ เพิ่มฟิล์ม</button>
         </div>
-        <div class="form-group">
-          <label>หน่วยงาน</label>
-          <select id="p_dept">${master.departments.map(d=>`<option value="${d.id}">${d.id} – ${d.name}</option>`).join('')}</select>
-        </div>
-        <div class="form-group">
-          <label>เลขที่บล็อกเดิม</label>
-          <div class="row gap-sm">
-            <input id="p_old_block" placeholder="เลขบล็อก" class="flex1"/>
-            <button class="scan-btn" onclick="openScan(v=>$('p_old_block').value=v)">📷</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>ปัญหา</label>
-          <select id="p_problem">
-            ${master.problems.map(p=>`<option>${p.name}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>หมายเหตุ</label><textarea id="p_remark" rows="2"></textarea>
-        </div>
-        <div class="form-group">
-          <label>รหัสพนักงานผู้ร้องขอ</label>
-          <div class="row gap-sm">
-            <input id="p_emp" placeholder="รหัส" class="flex1" oninput="lookupEmp(this,'p_emp_name')"/>
-            <button class="scan-btn" onclick="openScan(v=>{$('p_emp').value=v;lookupEmp($('p_emp'),'p_emp_name')})">📷</button>
-          </div>
-          <small id="p_emp_name" class="muted"></small>
+        <p class="scan-hint" style="margin:.3rem 0 .5rem">สแกน QR CODE ในบล็อกทุกสี · สูงสุด 4 Film</p>
+        <div class="table-scroll">
+          <table class="filmtbl">
+            <thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Rev.</th><th>เบอร์ผ้า</th><th></th></tr></thead>
+            <tbody id="film_rows"></tbody>
+          </table>
         </div>
       </div>
 
       <div class="card">
-        <div class="row gap-sm mb">
-          <span class="card-title flex1" style="margin:0">ข้อมูลฟิล์ม (สแกน QR ในบล็อก)</span>
-          <button class="btn-sm btn-secondary" onclick="addFilmRow()">+ เพิ่ม</button>
-        </div>
-        <div class="film-row film-header" style="font-size:.7rem">
-          <span>รหัสภายใน</span><span>ลำดับสี</span><span>Rev.</span><span>เบอร์ผ้า</span><span></span>
-        </div>
-        <div id="film_rows"></div>
+        <table class="ftable">
+          <tr><td class="lbl">ปัญหา</td><td class="in"><select id="p_problem" onchange="togglePressRemark()">${probOpts}</select></td></tr>
+          <tr><td class="lbl">หมายเหตุ</td><td class="in"><input id="p_remark" placeholder="ระบุเพิ่มเติม (จำเป็นเมื่อเลือก อื่นๆ)"/></td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้ร้องขอ</td><td class="in">
+            <div class="row gap-sm"><input id="p_emp" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'p_emp_name')"/><button class="scan-btn" onclick="openScan(v=>{$('p_emp').value=v;lookupEmp($('p_emp'),'p_emp_name')})">📷</button></div>
+            <div id="p_emp_name" class="emp-name"></div></td></tr>
+        </table>
       </div>
 
-      <button class="btn-primary" style="width:100%" onclick="submitPress()">SUBMIT</button>
+      <button class="btn-primary" style="width:100%;font-size:1.05rem;padding:.9rem" onclick="submitPress()">SUMMIT</button>
     </div>`;
 
-  window._pressFilms = films;
-  renderFilmRows();
+  window.lookupFrame = async (bno) => {
+    bno = (bno||'').trim();
+    const el = $('p_framesize');
+    if (!bno) { el.textContent = '-'; return; }
+    try { const { data } = await api('/api/block/'+encodeURIComponent(bno)); el.textContent = data.size_label || '-'; }
+    catch { el.textContent = 'ไม่พบบล็อกในทะเบียน'; }
+  };
+  window.togglePressRemark = () => {};
 
   window.addFilmRow = () => {
     if (window._pressFilms.length >= 4) { toast('สูงสุด 4 ฟิล์ม','red'); return; }
     window._pressFilms.push({internal_code:'',color_order:'',revision:'',fabric_no:''});
     renderFilmRows();
   };
-  window.removeFilmRow = (i) => { window._pressFilms.splice(i,1); renderFilmRows(); };
-
+  window.removeFilmRow = (i) => { if (window._pressFilms.length<=1) { toast('ต้องมีอย่างน้อย 1 ฟิล์ม','red'); return; } window._pressFilms.splice(i,1); renderFilmRows(); };
   function renderFilmRows() {
     $('film_rows').innerHTML = window._pressFilms.map((f,i)=>`
-      <div class="film-row">
-        <input value="${f.internal_code}" oninput="window._pressFilms[${i}].internal_code=this.value" placeholder="H-E-26-01"/>
-        <input value="${f.color_order}" oninput="window._pressFilms[${i}].color_order=this.value" placeholder="1"/>
-        <input value="${f.revision}" oninput="window._pressFilms[${i}].revision=this.value" placeholder="1"/>
-        <select onchange="window._pressFilms[${i}].fabric_no=this.value">
+      <tr>
+        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{window._pressFilms[${i}].internal_code=v;renderFilmRowsG();})">📷</button></td>
+        <td><input value="${f.internal_code}" oninput="window._pressFilms[${i}].internal_code=this.value" placeholder="H-E-26-01" style="min-width:110px"/></td>
+        <td><input value="${f.color_order}" oninput="window._pressFilms[${i}].color_order=this.value" placeholder="1" style="width:56px"/></td>
+        <td><input value="${f.revision}" oninput="window._pressFilms[${i}].revision=this.value" placeholder="1" style="width:56px"/></td>
+        <td><select onchange="window._pressFilms[${i}].fabric_no=this.value" style="min-width:100px">
           <option value="">เลือก...</option>
           ${master.fabric_types.map(ft=>`<option value="${ft.id}" ${ft.id===f.fabric_no?'selected':''}>${ft.id}</option>`).join('')}
-        </select>
-        <button class="btn-icon" onclick="removeFilmRow(${i})">🗑️</button>
-      </div>`).join('');
+        </select></td>
+        <td><button class="btn-icon" onclick="removeFilmRow(${i})">🗑️</button></td>
+      </tr>`).join('');
   }
+  window.renderFilmRowsG = renderFilmRows;
+  renderFilmRows();
 
   window.submitPress = async () => {
     const old_block_no = $('p_old_block').value.trim();
     if (!old_block_no) { toast('กรุณากรอกเลขบล็อกเดิม','red'); return; }
+    if ($('p_problem').value === 'อื่นๆ' && !$('p_remark').value.trim()) { toast('เลือก "อื่นๆ" ต้องกรอกหมายเหตุ','red'); return; }
     const body = {
-      date: $('p_date').value,
-      time: $('p_time').value,
+      date: todayISO(),
+      time: nowTime(),
       dept: $('p_dept').value,
       old_block_no,
       requester_emp: $('p_emp').value.trim()||null,
@@ -424,7 +454,7 @@ function pagePressNew(app) {
     };
     const { data } = await api('/api/press','POST',body);
     toast('ร้องขอสำเร็จ: '+data.doc_no);
-    renderPage('pressDetail',{doc_no:data.doc_no});
+    renderPage('press',{filter:'pending'});
   };
 }
 
@@ -1267,6 +1297,11 @@ function fmtDate(iso) {
   if (!iso) return '-';
   const p = String(iso).slice(0,10).split('-');
   return p.length === 3 ? `${+p[2]}/${+p[1]}/${p[0]}` : iso;
+}
+function fmtDatePad(iso) {
+  if (!iso) return '';
+  const p = String(iso).slice(0,10).split('-');
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
 }
 function todayISO() { return new Date().toISOString().slice(0,10); }
 function todayStr() {

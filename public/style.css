@@ -252,6 +252,29 @@ tr.row-red td{background:var(--red-soft);}
 .blk-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent);
   font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;}
 
+/* Folder view (บล็อกรออัด) */
+.folder-tag{display:inline-block;background:var(--green);color:#fff;font-weight:700;
+  padding:.55rem 1.1rem;border-radius:10px;margin-bottom:.9rem;box-shadow:var(--shadow-sm);}
+.folder-box{border:2px solid #334155;border-radius:6px;background:#fff;overflow:hidden;}
+.folder-row{padding:1rem;text-align:center;font-size:.95rem;font-weight:600;color:#0f172a;
+  border-bottom:1.5px solid #334155;cursor:pointer;transition:background .15s;word-break:break-all;}
+.folder-row:last-child{border-bottom:none;}
+.folder-row:hover{background:var(--accent-soft);}
+.folder-done{display:inline-block;background:#facc15;color:#713f12;font-weight:700;
+  padding:.6rem 1.2rem;border-radius:10px;margin-top:1rem;float:right;box-shadow:var(--shadow-sm);}
+
+/* Press form tabs */
+.ptabs{display:flex;gap:6px;margin-bottom:.85rem;flex-wrap:wrap;}
+.ptab{flex:1;min-width:80px;padding:.55rem .4rem;font-size:.82rem;font-weight:700;border:1px solid var(--border);
+  background:#fff;color:var(--muted);border-radius:10px;cursor:pointer;}
+.ptab.active{background:var(--green);color:#fff;border-color:var(--green);}
+
+/* Film table */
+table.filmtbl{width:100%;border-collapse:collapse;font-size:.85rem;}
+table.filmtbl th{background:#f8fafc;color:var(--muted);font-weight:700;padding:.4rem .5rem;white-space:nowrap;}
+table.filmtbl td{padding:.35rem .4rem;border-top:1px solid var(--border);}
+table.filmtbl input,table.filmtbl select{padding:.4rem .5rem;background:#fefce8;}
+
 /* DATA BASE 1 table */
 table.db1 th,table.db1 td{white-space:nowrap;text-align:left;}
 table.db1 td.ctr{text-align:center;}
