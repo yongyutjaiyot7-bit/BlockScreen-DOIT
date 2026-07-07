@@ -35,12 +35,13 @@ function renderPage(page, params = {}) {
     pressDB3: pagePressDB3,
     internal: pageInternal,
     internalPrepare: pageInternalPrepare,
+    internalTransport: pageInternalTransport,
     internalReceive: pageInternalReceive,
-    stretchSendResult: pageStretchSendResult,
-    stretchReceiveResult: pageStretchReceiveResult,
     external: pageExternal,
-    externalSend: pageExternalSend,
-    externalReceive: pageExternalReceive,
+    externalStretchSend: pageExternalStretchSend,
+    externalStretchReceive: pageExternalStretchReceive,
+    externalStretchSendResult: pageExternalStretchSendResult,
+    externalStretchReceiveResult: pageExternalStretchReceiveResult,
     search: pageSearch,
     blocks: pageBlocks,
   };
@@ -890,33 +891,132 @@ async function pagePressDB3(app) {
 // ══════════════════════════════════════════════════════
 //  MODULE 3 – รับส่งภายใน
 // ══════════════════════════════════════════════════════
-function pageInternal(app) {
+async function pageInternal(app) {
+  const { data: docs } = await api('/api/internal');
+  const typeLabel = { prepare:'จัดเตรียม', transport:'ขนส่ง', store:'จัดเก็บ' };
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('home')">‹</button>
       <h1>🔄 รับส่งภายใน</h1>
     </div>
-    <div class="home-grid">
-      <div class="home-card" onclick="renderPage('internalPrepare')">
-        <div class="hc-icon">📤</div>
-        <div class="hc-title">ส่งบล็อกขึงผ้า</div>
-        <div class="hc-sub">ส่งบล็อกไปขึงผ้า</div>
+    <div class="page">
+      <div class="card">
+        <div class="card-title">สร้างเอกสารใหม่</div>
+        <div class="row gap-sm" style="flex-wrap:wrap">
+          <button class="btn-primary" onclick="renderPage('internalPrepare')">🧰 จัดเตรียม</button>
+          <button class="btn-secondary" onclick="renderPage('internalTransport')">🚀 ขนส่ง/ตรวจรับ</button>
+          <button class="btn-secondary" onclick="renderPage('internalReceive')">🗃️ ตรวจรับและจัดเก็บ</button>
+        </div>
       </div>
-      <div class="home-card" onclick="renderPage('internalReceive')">
-        <div class="hc-icon">📥</div>
-        <div class="hc-title">รับบล็อกขึงผ้า</div>
-        <div class="hc-sub">รับบล็อกที่ขึงผ้าแล้ว</div>
+      <div class="card">
+        <div class="card-title">ประวัติเอกสาร</div>
+        ${docs.length===0?`<p class="no-data">ยังไม่มีรายการ</p>`:docs.map(d=>`
+          <div class="list-item">
+            <div>
+              <div class="list-title">${d.doc_no}</div>
+              <div class="list-sub">${typeLabel[d.doc_type]||d.doc_type} · ${d.from_dept||''}→${d.to_dept||''} · ${d.doc_date}</div>
+            </div>
+            <div class="list-right"><span class="badge badge-gray">${d.status}</span></div>
+          </div>`).join('')}
       </div>
     </div>`;
 }
 
+function internalPrepareForm(app, title, type, backPage, submitLabel) {
+  const blocks = [];
+  app.innerHTML = `
+    <div class="topnav">
+      <button class="back-btn" onclick="renderPage('${backPage}')">‹</button>
+      <h1>${title}</h1>
+    </div>
+    <div class="page">
+      <div class="steps">
+        <div class="step ${type==='prepare'?'active':'done'}">1.จัดเตรียม</div>
+        <div class="step ${type==='transport'?'active':type==='store'?'done':''}">2.ตรวจรับ+ขนส่ง</div>
+        <div class="step ${type==='store'?'active':''}">3.ตรวจรับ+จัดเก็บ</div>
+      </div>
+      <div class="card">
+        <div class="grid2">
+          <div class="form-group"><label>วันที่</label><input type="date" id="m_date" value="${todayISO()}"/></div>
+          <div class="form-group"><label>เวลา</label><input type="time" id="m_time" value="${nowTime()}"/></div>
+          <div class="form-group"><label>หน่วยงานต้นทาง</label>
+            <select id="m_from">${master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('')}</select>
+          </div>
+          <div class="form-group"><label>เตรียมให้หน่วยงาน</label>
+            <select id="m_to">${master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="form-group"><label>รหัสพนักงาน</label>
+          <div class="row gap-sm">
+            <input id="m_emp" class="flex1" oninput="lookupEmp(this,'m_emp_n')"/>
+            <button class="scan-btn" onclick="openScan(v=>{$('m_emp').value=v;lookupEmp($('m_emp'),'m_emp_n')})">📷</button>
+          </div>
+          <small id="m_emp_n" class="muted"></small>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row gap-sm mb">
+          <span class="card-title flex1" style="margin:0">บล็อก (สแกน QR)</span>
+          <button class="scan-btn" onclick="openScan(v=>addMBlock(v))">📷 สแกน</button>
+        </div>
+        <div class="row gap-sm mb">
+          <input id="m_block_in" class="flex1" placeholder="พิมพ์เลขบล็อก" onkeydown="if(event.key==='Enter')addMBlock($('m_block_in').value)"/>
+          <button class="btn-secondary" onclick="addMBlock($('m_block_in').value)">เพิ่ม</button>
+        </div>
+        <div id="m_block_list"></div>
+      </div>
+
+      <button class="btn-primary" style="width:100%" onclick="submitInternal('${type}')">${submitLabel}</button>
+    </div>`;
+
+  window._mBlocks = blocks;
+  window.addMBlock = (val) => {
+    val = val?.trim();
+    if (!val) return;
+    if (window._mBlocks.find(b=>b.block_no===val)) { toast('บล็อกซ้ำ!','red'); return; }
+    window._mBlocks.push({block_no:val,internal_code:'',color_order:'',revision:'',fabric_no:''});
+    $('m_block_in').value = '';
+    renderMBlocks();
+  };
+  window.removeMBlock = (i) => { window._mBlocks.splice(i,1); renderMBlocks(); };
+
+  function renderMBlocks() {
+    $('m_block_list').innerHTML = window._mBlocks.map((b,i)=>`
+      <div style="padding:.4rem 0;border-bottom:1px solid var(--border)">
+        <div class="row gap-sm">
+          <strong class="flex1">${b.block_no}</strong>
+          <button class="btn-icon" onclick="removeMBlock(${i})">🗑️</button>
+        </div>
+      </div>`).join('') || '<p class="no-data">ยังไม่มีบล็อก</p>';
+  }
+  renderMBlocks();
+
+  window.submitInternal = async (type) => {
+    if (window._mBlocks.length === 0) { toast('กรุณาเพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
+    const body = {
+      date: $('m_date').value, time: $('m_time').value,
+      from_dept: $('m_from').value, to_dept: $('m_to').value,
+      emp_code: $('m_emp').value.trim()||null,
+      blocks: window._mBlocks,
+    };
+    const { data } = await api(`/api/internal/${type}`,'POST',body);
+    toast('สร้างเอกสาร: '+data.doc_no);
+    renderPage('internal');
+  };
+}
+
+function pageInternalPrepare(app) { internalPrepareForm(app,'🧰 ขั้นตอนจัดเตรียม','prepare','internal','SUMMIT จัดเตรียม'); }
+function pageInternalTransport(app) { internalPrepareForm(app,'🚀 ขั้นตอนตรวจรับ+ขนส่ง','transport','internal','SUMMIT ขนส่ง'); }
+function pageInternalReceive(app) { internalPrepareForm(app,'🗃️ ขั้นตอนตรวจรับ+จัดเก็บ','store','internal','SUMMIT จัดเก็บ'); }
+
 // ── ส่งบล็อกขึงผ้า ──
-function pageInternalPrepare(app) {
+function pageExternalStretchSend(app) {
   window._sendBlocks = [];
   const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
   const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
-    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>ส่งบล็อกขึงผ้า</h1></div>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>ส่งบล็อกขึงผ้า</h1></div>
     <div class="page">
       <datalist id="empList">${empOpts}</datalist>
       <div class="card">
@@ -971,7 +1071,7 @@ function pageInternalPrepare(app) {
     };
     const { data } = await api('/api/stretch-send','POST',body);
     toast('ส่งบล็อกขึงผ้าสำเร็จ: '+data.doc_no);
-    renderPage('stretchSendResult',{doc_no:data.doc_no});
+    renderPage('externalStretchSendResult',{doc_no:data.doc_no});
   };
 }
 
@@ -989,11 +1089,11 @@ function db3TableHtml(rows) {
   </tr></thead><tbody>${rows.length?rows.map(db3RowHtml).join(''):`<tr><td colspan="12" class="no-data">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>`;
 }
 
-async function pageStretchSendResult(app, {doc_no}) {
+async function pageExternalStretchSendResult(app, {doc_no}) {
   const { data: all } = await api('/api/stretch-send-rows');
   const rows = all.filter(r=>r.doc_no===doc_no).map(r=>({ ...r, internal_codes:'-', revisions:'-', color_orders:'-', receiver_name:'-', storage_location:'-', remarks:'-' }));
   app.innerHTML = `
-    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>DATA BASE 3</h1>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>DATA BASE 3</h1>
       <button class="btn-primary btn-sm" onclick="exportRows('${doc_no}','send')">⬇ Excel</button></div>
     <div class="page"><div class="card"><div class="card-title">ฟอร์มใบเบิกจ่ายบล็อก</div>${db3TableHtml(rows)}</div></div>`;
   window._db3rows = rows;
@@ -1004,12 +1104,12 @@ async function pageStretchSendResult(app, {doc_no}) {
 }
 
 // ── รับบล็อกขึงผ้า ──
-function pageInternalReceive(app) {
+function pageExternalStretchReceive(app) {
   window._recvBlocks = [];
   const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
   const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
-    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>รับบล็อกขึงผ้า</h1></div>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>รับบล็อกขึงผ้า</h1></div>
     <div class="page">
       <datalist id="empList">${empOpts}</datalist>
       <div class="card">
@@ -1081,11 +1181,11 @@ function pageInternalReceive(app) {
     };
     const { data } = await api('/api/stretch-receive','POST',body);
     toast('รับบล็อกขึงผ้าสำเร็จ: '+data.doc_no);
-    renderPage('stretchReceiveResult',{doc_no:data.doc_no});
+    renderPage('externalStretchReceiveResult',{doc_no:data.doc_no});
   };
 }
 
-async function pageStretchReceiveResult(app, {doc_no}) {
+async function pageExternalStretchReceiveResult(app, {doc_no}) {
   const { data: all4 } = await api('/api/stretch-receive-rows');
   const rows4 = all4.filter(r=>r.doc_no===doc_no);
   const rows3 = rows4.map(r=>({ date:r.date, doc_no:r.doc_no, block_no:r.block_no, internal_codes:'-',
@@ -1093,7 +1193,7 @@ async function pageStretchReceiveResult(app, {doc_no}) {
     to_dept:r.to_dept, storage_location:'-', remarks:'-' }));
   const passLbl = v => v===1?'ผ่าน':v===0?'ไม่ผ่าน':'-';
   app.innerHTML = `
-    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>ผลรับบล็อกขึงผ้า</h1></div>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>ผลรับบล็อกขึงผ้า</h1></div>
     <div class="page">
       <div class="card"><div class="row gap-sm" style="align-items:center">
         <span class="card-title flex1" style="margin:0;border:none;padding:0">DATA BASE 3 — ฟอร์มใบเบิกจ่ายบล็อก</span>
@@ -1127,32 +1227,22 @@ async function pageStretchReceiveResult(app, {doc_no}) {
 // ══════════════════════════════════════════════════════
 //  MODULE 4 – รับส่งภายนอก
 // ══════════════════════════════════════════════════════
-async function pageExternal(app) {
-  const { data: docs } = await api('/api/external');
-  const typeLabel = { send_out:'ส่งออก (OU)', receive_in:'รับเข้า (IN)' };
-  const typeBadge = { send_out:'badge-yellow', receive_in:'badge-green' };
+function pageExternal(app) {
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('home')">‹</button>
       <h1>🚚 รับส่งภายนอก</h1>
     </div>
-    <div class="page">
-      <div class="card">
-        <div class="row gap-sm">
-          <button class="btn-primary flex1" onclick="renderPage('externalSend')">📤 ส่งบล็อกขึงผ้า</button>
-          <button class="btn-success flex1" onclick="renderPage('externalReceive')">📥 รับบล็อกขึงผ้า</button>
-        </div>
+    <div class="home-grid">
+      <div class="home-card" onclick="renderPage('externalStretchSend')">
+        <div class="hc-icon">📤</div>
+        <div class="hc-title">ส่งบล็อกขึงผ้า</div>
+        <div class="hc-sub">ส่งบล็อกไปขึงผ้า</div>
       </div>
-      <div class="card">
-        <div class="card-title">ประวัติเอกสาร</div>
-        ${docs.length===0?`<p class="no-data">ยังไม่มีรายการ</p>`:docs.map(d=>`
-          <div class="list-item">
-            <div>
-              <div class="list-title">${d.doc_no}</div>
-              <div class="list-sub">${d.from_dept}→${d.to_dept} · ${d.doc_date}</div>
-            </div>
-            <div class="list-right"><span class="badge ${typeBadge[d.doc_type]||'badge-gray'}">${typeLabel[d.doc_type]||d.doc_type}</span></div>
-          </div>`).join('')}
+      <div class="home-card" onclick="renderPage('externalStretchReceive')">
+        <div class="hc-icon">📥</div>
+        <div class="hc-title">รับบล็อกขึงผ้า</div>
+        <div class="hc-sub">รับบล็อกที่ขึงผ้าแล้ว</div>
       </div>
     </div>`;
 }
