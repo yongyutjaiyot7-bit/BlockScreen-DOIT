@@ -320,12 +320,11 @@ async function pagePress(app, { filter = 'all' } = {}) {
                   <div class="list-sub">บล็อกเดิม ${d.old_block_no}${d.new_block_no?' → ใหม่ '+d.new_block_no:''} · ${d.dept}</div>
                 </div>
                 <div class="list-right">
-                  <span class="badge ${d.status==='inspected'?'badge-blue':'badge-yellow'}">${d.status==='inspected'?'รอ SUMMIT':'รอดำเนินการ'}</span>
+                  <span class="badge ${d.status==='inspected'?'badge-blue':'badge-yellow'}">${d.status==='inspected'?'รอจบขั้นตอน':'รอดำเนินการ'}</span>
                   <div class="chevron">›</div>
                 </div>
               </div>`).join('')}
         </div>
-        <div class="folder-done">จบขั้นตอนร้องขออัดบล็อก</div>
       </div>`;
     return;
   }
@@ -351,7 +350,6 @@ async function pagePress(app, { filter = 'all' } = {}) {
                 <div class="list-right"><span class="chevron">›</span></div>
               </div>`).join('')}
         </div>
-        <div class="folder-done">จบขั้นตอนอัดบล็อก</div>
       </div>`;
     return;
   }
@@ -647,10 +645,10 @@ async function pagePressInspect(app, {doc_no}) {
       </div>
 
       <div class="row gap-sm">
-        <button class="btn-success flex1" style="padding:.9rem;font-size:1rem" onclick="saveInspect('${doc_no}')">SAVE</button>
-        <button class="flex1" id="btn_summit" disabled style="padding:.9rem;font-size:1rem;background:#cbd5e1;color:#64748b;cursor:not-allowed" onclick="summitInspect('${doc_no}')">SUMMIT</button>
+        <button class="btn-success flex1" style="padding:.9rem;font-size:1rem" onclick="saveInspect('${doc_no}')">บันทึก</button>
+        <button class="flex1" id="btn_summit" disabled style="padding:.9rem;font-size:1rem;background:#cbd5e1;color:#64748b;cursor:not-allowed" onclick="summitInspect('${doc_no}')">จบขั้นตอน</button>
       </div>
-      <p class="scan-hint" style="text-align:center;margin-top:.5rem">กด SAVE ได้ตลอด (เพิ่มข้อมูลได้เรื่อยๆ) · SUMMIT เปิดเป็นสีเขียวหลังกด SAVE · กด SUMMIT ต้องระบุพนักงานทั้ง 2 คน แล้วจึงจบขั้นตอน</p>
+      <p class="scan-hint" style="text-align:center;margin-top:.5rem">กด "บันทึก" ได้ตลอด (เพิ่มข้อมูลได้เรื่อยๆ) · "จบขั้นตอน" เปิดเป็นสีเขียวหลังกดบันทึก · ต้องระบุพนักงานทั้ง 2 คน</p>
     </div>`;
 
   window.lookupNewFrame = async (bno) => {
@@ -666,9 +664,12 @@ async function pagePressInspect(app, {doc_no}) {
     else { $('i_op_date').textContent = '-'; $('i_op_time').textContent = '-'; }
   };
   window.setCheck = (key, val) => {
-    window._inspState[key] = val;
-    $(`pf_pass_${key}`).className = 'pfbtn' + (val===1?' on-pass':'');
-    $(`pf_fail_${key}`).className = 'pfbtn' + (val===0?' on-fail':'');
+    // กดซ้ำที่ค่าเดิม = ยกเลิก (กลับเป็นว่าง)
+    const cur = window._inspState[key];
+    const next = (cur === val) ? null : val;
+    window._inspState[key] = next;
+    $(`pf_pass_${key}`).className = 'pfbtn' + (next===1?' on-pass':'');
+    $(`pf_fail_${key}`).className = 'pfbtn' + (next===0?' on-fail':'');
   };
 
   function collectBody() {
@@ -696,12 +697,12 @@ async function pagePressInspect(app, {doc_no}) {
   window.saveInspect = async (docNo) => {
     if (!$('i_new_block').value.trim()) { toast('กรุณาระบุเลขที่บล็อกใหม่','red'); return; }
     await api(`/api/press-inspect?doc_no=${encodeURIComponent(docNo)}`,'POST',collectBody());
-    toast('บันทึกแล้ว (SAVE) — กลับสู่ Folder บล็อกรออัด');
+    toast('บันทึกแล้ว — กลับสู่ Folder บล็อกรออัด');
     renderPage('press',{filter:'pending'});
   };
   window.summitInspect = async (docNo) => {
     const e1 = $('i_emp1').value.trim(), e2 = $('i_emp2').value.trim();
-    if (!e1 || !e2) { toast('ต้องระบุ/สแกนพนักงาน BL ทั้ง 2 คน ก่อนกด SUMMIT','red'); return; }
+    if (!e1 || !e2) { toast('ต้องระบุ/สแกนพนักงาน BL ทั้ง 2 คน ก่อนจบขั้นตอน','red'); return; }
     // บันทึกครั้งสุดท้าย (พร้อมชื่อผู้ปฏิบัติ + วันเวลาที่กด SUMMIT) แล้วจบขั้นตอน
     await api(`/api/press-inspect?doc_no=${encodeURIComponent(docNo)}`,'POST',collectBody());
     await api(`/api/press-summit?doc_no=${encodeURIComponent(docNo)}`,'POST',{});
