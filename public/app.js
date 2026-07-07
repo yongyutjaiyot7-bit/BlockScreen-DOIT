@@ -36,7 +36,9 @@ function renderPage(page, params = {}) {
     internal: pageInternal,
     internalPrepare: pageInternalPrepare,
     internalTransport: pageInternalTransport,
+    internalTransportForm: pageInternalTransportForm,
     internalReceive: pageInternalReceive,
+    internalStoreForm: pageInternalStoreForm,
     external: pageExternal,
     externalStretchSend: pageExternalStretchSend,
     externalStretchReceive: pageExternalStretchReceive,
@@ -891,9 +893,8 @@ async function pagePressDB3(app) {
 // ══════════════════════════════════════════════════════
 //  MODULE 3 – รับส่งภายใน
 // ══════════════════════════════════════════════════════
-async function pageInternal(app) {
-  const { data: docs } = await api('/api/internal');
-  const typeLabel = { prepare:'จัดเตรียม', transport:'ขนส่ง', store:'จัดเก็บ' };
+// ── เมนู "รับส่งภายใน" ──
+function pageInternal(app) {
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('home')">‹</button>
@@ -908,107 +909,273 @@ async function pageInternal(app) {
           <button class="btn-secondary" onclick="renderPage('internalReceive')">🗃️ ตรวจรับและจัดเก็บ</button>
         </div>
       </div>
+    </div>`;
+}
+
+// ── ขั้นตอนการเตรียม (จัดเตรียม) ──
+function pageInternalPrepare(app) {
+  window._prepBlocks = [];
+  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>ขั้นตอนการเตรียม</h1></div>
+    <div class="page">
+      <datalist id="empList">${empOpts}</datalist>
       <div class="card">
-        <div class="card-title">ประวัติเอกสาร</div>
-        ${docs.length===0?`<p class="no-data">ยังไม่มีรายการ</p>`:docs.map(d=>`
-          <div class="list-item">
+        <table class="ftable">
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
+          <tr><td class="lbl">หน่วยงานที่เตรียม <span class="req">*</span></td><td class="in"><select id="pp_from">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้จัดเตรียม <span class="req">*</span></td><td class="in">
+            <div class="row gap-sm"><input id="pp_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'pp_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('pp_emp').value=v;lookupEmp($('pp_emp'),'pp_emp_n')})">📷</button></div>
+            <div id="pp_emp_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">เตรียมให้หน่วยงาน <span class="req">*</span></td><td class="in"><select id="pp_to">${deptOpts}</select></td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="row gap-sm" style="align-items:center">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">บล็อก (<span id="pp_count">0</span>)</span>
+          <button class="scan-btn" onclick="openScan(v=>addPrepBlock(v),{continuous:true})">📷 สแกนต่อเนื่อง</button>
+        </div>
+        <p class="scan-hint" style="margin:.3rem 0 .6rem">สแกน QR CODE ได้ต่อเนื่อง 100 หมายเลข · แต่ละบล็อกเพิ่มฟิล์มได้สูงสุด 4</p>
+        <div class="row gap-sm mb"><input id="pp_block_in" class="flex1" placeholder="พิมพ์เลขบล็อก" onkeydown="if(event.key==='Enter'){addPrepBlock($('pp_block_in').value);event.preventDefault();}"/><button class="btn-secondary" onclick="addPrepBlock($('pp_block_in').value)">เพิ่ม</button></div>
+        <div id="pp_rows"></div>
+      </div>
+      <button class="btn-primary" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="saveOnclickPrepare()">บันทึก</button>
+    </div>`;
+
+  window.addPrepBlock = (val) => {
+    val = (val||'').trim(); if (!val) return;
+    if (window._prepBlocks.find(b=>b.block_no===val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    window._prepBlocks.push({ block_no: val, films: [{internal_code:'',color_order:'',revision:''}] });
+    $('pp_block_in').value = '';
+    renderPrepRows();
+  };
+  window.removePrepBlock = (i) => { window._prepBlocks.splice(i,1); renderPrepRows(); };
+  window.addPrepFilm = (bi) => {
+    const films = window._prepBlocks[bi].films;
+    if (films.length >= 4) { toast('สูงสุด 4 ฟิล์มต่อบล็อก','red'); return; }
+    films.push({internal_code:'',color_order:'',revision:''});
+    renderPrepRows();
+  };
+  window.removePrepFilm = (bi, fi) => { window._prepBlocks[bi].films.splice(fi,1); renderPrepRows(); };
+  window.setPrepFilm = (bi, fi, key, val) => { window._prepBlocks[bi].films[fi][key] = val; };
+
+  function renderPrepRows() {
+    $('pp_count').textContent = window._prepBlocks.length;
+    $('pp_rows').innerHTML = window._prepBlocks.map((b,bi)=>`
+      <div class="prep-block-row">
+        <div class="row gap-sm" style="align-items:center">
+          <strong class="flex1">บล็อก ${b.block_no}</strong>
+          <button class="btn-sm btn-secondary" onclick="addPrepFilm(${bi})">+ ฟิล์ม</button>
+          <button class="btn-icon" onclick="removePrepBlock(${bi})">🗑️</button>
+        </div>
+        <div class="table-scroll"><table class="filmtbl"><thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Revision</th><th></th></tr></thead><tbody>
+          ${b.films.map((f,fi)=>`<tr>
+            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{setPrepFilm(${bi},${fi},'internal_code',v);renderPrepRowsG();})">📷</button></td>
+            <td><input value="${f.internal_code}" oninput="setPrepFilm(${bi},${fi},'internal_code',this.value)" placeholder="H-E-26-01" style="min-width:100px"/></td>
+            <td><input value="${f.color_order}" oninput="setPrepFilm(${bi},${fi},'color_order',this.value)" placeholder="1" style="width:56px"/></td>
+            <td><input value="${f.revision}" oninput="setPrepFilm(${bi},${fi},'revision',this.value)" placeholder="1" style="width:56px"/></td>
+            <td><button class="btn-icon" onclick="removePrepFilm(${bi},${fi})">🗑️</button></td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>`).join('') || `<p class="no-data">ยังไม่มีบล็อก</p>`;
+  }
+  window.renderPrepRowsG = renderPrepRows;
+  renderPrepRows();
+
+  window.saveOnclickPrepare = async () => {
+    if (!$('pp_from').value) { toast('กรุณาระบุหน่วยงานที่เตรียม','red'); return; }
+    if (!$('pp_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้จัดเตรียม','red'); return; }
+    if (!$('pp_to').value) { toast('กรุณาระบุหน่วยงานที่เตรียมให้','red'); return; }
+    if (window._prepBlocks.length===0) { toast('กรุณาสแกน/เพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
+    for (const b of window._prepBlocks) {
+      if (!b.films.some(f=>f.internal_code.trim())) { toast('บล็อก '+b.block_no+' ต้องมีข้อมูลฟิล์มอย่างน้อย 1 รายการ','red'); return; }
+    }
+    const body = {
+      date: todayISO(), time: nowTime(),
+      from_dept: $('pp_from').value, to_dept: $('pp_to').value,
+      emp_code: $('pp_emp').value.trim(),
+      blocks: window._prepBlocks,
+    };
+    const { data } = await api('/api/internal/prepare','POST',body);
+    toast('บันทึกจัดเตรียมสำเร็จ: '+data.doc_no);
+    renderPage('internalTransport');
+  };
+}
+
+function internalFileName(d) {
+  return `${fmtDatePad(d.doc_date)}&${d.to_dept||d.from_dept||''}&${d.doc_no}`;
+}
+
+// ── Folder: ขั้นตอนตรวจรับและขนส่ง ──
+async function pageInternalTransport(app) {
+  const { data: docs } = await api('/api/internal-list?status=prepared');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>ขนส่ง/ตรวจรับ</h1></div>
+    <div class="page">
+      <div class="folder-tag">📁 Folder ขั้นตอนตรวจรับและขนส่ง</div>
+      <div class="card">
+        ${docs.length===0?`<p class="no-data">ไม่มีรายการรอขนส่ง</p>`:docs.map(d=>`
+          <div class="list-item" onclick="renderPage('internalTransportForm',{doc_no:'${d.doc_no}'})">
             <div>
-              <div class="list-title">${d.doc_no}</div>
-              <div class="list-sub">${typeLabel[d.doc_type]||d.doc_type} · ${d.from_dept||''}→${d.to_dept||''} · ${d.doc_date}</div>
+              <div class="list-title">${internalFileName(d)}</div>
+              <div class="list-sub">เตรียมให้ ${d.to_dept||'-'} · ผู้เตรียม ${d.emp_name||'-'}</div>
             </div>
-            <div class="list-right"><span class="badge badge-gray">${d.status}</span></div>
+            <div class="list-right"><span class="chevron">›</span></div>
           </div>`).join('')}
       </div>
     </div>`;
 }
 
-function internalPrepareForm(app, title, type, backPage, submitLabel) {
-  const blocks = [];
+// ── ฟอร์มตรวจรับและขนส่ง ──
+async function pageInternalTransportForm(app, {doc_no}) {
+  const { data: d } = await api('/api/internal-doc?doc_no='+encodeURIComponent(doc_no));
+  const deptOpts = master.departments.map(x=>`<option value="${x.id}">${x.id}</option>`).join('');
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  const prepared = d.blocks; // รายการที่เตรียมไว้
+  window._transScanned = new Set();
+  window._transExtra = [];
   app.innerHTML = `
-    <div class="topnav">
-      <button class="back-btn" onclick="renderPage('${backPage}')">‹</button>
-      <h1>${title}</h1>
-    </div>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internalTransport')">‹</button><h1>ตรวจรับและขนส่ง</h1></div>
     <div class="page">
-      <div class="steps">
-        <div class="step ${type==='prepare'?'active':'done'}">1.จัดเตรียม</div>
-        <div class="step ${type==='transport'?'active':type==='store'?'done':''}">2.ตรวจรับ+ขนส่ง</div>
-        <div class="step ${type==='store'?'active':''}">3.ตรวจรับ+จัดเก็บ</div>
+      <datalist id="empList">${empOpts}</datalist>
+      <div class="card">
+        <table class="ftable">
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
+          <tr><td class="lbl">หน่วยงานที่ขน <span class="req">*</span></td><td class="in"><select id="tr_dept">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้ขน <span class="req">*</span></td><td class="in">
+            <div class="row gap-sm"><input id="tr_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'tr_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('tr_emp').value=v;lookupEmp($('tr_emp'),'tr_emp_n')})">📷</button></div>
+            <div id="tr_emp_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">เตรียมให้หน่วยงาน</td><td class="auto">${d.to_dept||'-'}</td></tr>
+          <tr><td class="lbl">จำนวนบล็อกที่สแกนถูกต้อง</td><td class="auto" id="tr_matched_count">0</td></tr>
+          <tr><td class="lbl">จำนวนบล็อกทั้งหมด</td><td class="auto">${prepared.length}</td></tr>
+        </table>
       </div>
       <div class="card">
-        <div class="grid2">
-          <div class="form-group"><label>วันที่</label><input type="date" id="m_date" value="${todayISO()}"/></div>
-          <div class="form-group"><label>เวลา</label><input type="time" id="m_time" value="${nowTime()}"/></div>
-          <div class="form-group"><label>หน่วยงานต้นทาง</label>
-            <select id="m_from">${master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('')}</select>
-          </div>
-          <div class="form-group"><label>เตรียมให้หน่วยงาน</label>
-            <select id="m_to">${master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('')}</select>
-          </div>
+        <div class="row gap-sm" style="align-items:center">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">สแกนตรวจรับ</span>
+          <button class="scan-btn" onclick="openScan(v=>scanTransport(v),{continuous:true})">📷 สแกนต่อเนื่อง</button>
         </div>
-        <div class="form-group"><label>รหัสพนักงาน</label>
-          <div class="row gap-sm">
-            <input id="m_emp" class="flex1" oninput="lookupEmp(this,'m_emp_n')"/>
-            <button class="scan-btn" onclick="openScan(v=>{$('m_emp').value=v;lookupEmp($('m_emp'),'m_emp_n')})">📷</button>
-          </div>
-          <small id="m_emp_n" class="muted"></small>
-        </div>
+        <p class="scan-hint" style="margin:.3rem 0 .6rem">เลขที่บล็อกที่ Scan ห้ามซ้ำ</p>
+        <div class="row gap-sm mb"><input id="tr_block_in" class="flex1" placeholder="พิมพ์เลขบล็อก" onkeydown="if(event.key==='Enter'){scanTransport($('tr_block_in').value);event.preventDefault();}"/><button class="btn-secondary" onclick="scanTransport($('tr_block_in').value)">เพิ่ม</button></div>
+        <div class="table-scroll"><table class="db1"><thead><tr><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>ลำดับสี</th><th>สถานะ</th></tr></thead><tbody id="tr_rows"></tbody></table></div>
       </div>
-
       <div class="card">
-        <div class="row gap-sm mb">
-          <span class="card-title flex1" style="margin:0">บล็อก (สแกน QR)</span>
-          <button class="scan-btn" onclick="openScan(v=>addMBlock(v))">📷 สแกน</button>
-        </div>
-        <div class="row gap-sm mb">
-          <input id="m_block_in" class="flex1" placeholder="พิมพ์เลขบล็อก" onkeydown="if(event.key==='Enter')addMBlock($('m_block_in').value)"/>
-          <button class="btn-secondary" onclick="addMBlock($('m_block_in').value)">เพิ่ม</button>
-        </div>
-        <div id="m_block_list"></div>
+        <table class="ftable">
+          <tr><td class="lbl">เลขที่บล็อกที่ยังไม่สแกน</td><td class="auto" id="tr_missing">${prepared.map(b=>b.block_no).join(', ')||'-'}</td></tr>
+          <tr><td class="lbl">เลขที่บล็อกที่เกินมานอกเหนือจากการเตรียม</td><td class="auto" id="tr_extra_list">-</td></tr>
+        </table>
       </div>
-
-      <button class="btn-primary" style="width:100%" onclick="submitInternal('${type}')">${submitLabel}</button>
+      <button class="btn-danger" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="finishTransport('${doc_no}')">จบขั้นตอน</button>
     </div>`;
 
-  window._mBlocks = blocks;
-  window.addMBlock = (val) => {
-    val = val?.trim();
-    if (!val) return;
-    if (window._mBlocks.find(b=>b.block_no===val)) { toast('บล็อกซ้ำ!','red'); return; }
-    window._mBlocks.push({block_no:val,internal_code:'',color_order:'',revision:'',fabric_no:''});
-    $('m_block_in').value = '';
-    renderMBlocks();
+  window.scanTransport = (val) => {
+    val = (val||'').trim(); if (!val) return;
+    if (window._transScanned.has(val) || window._transExtra.includes(val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    const found = prepared.find(b=>b.block_no===val);
+    if (found) window._transScanned.add(val);
+    else window._transExtra.push(val);
+    $('tr_block_in').value='';
+    renderTransRows();
   };
-  window.removeMBlock = (i) => { window._mBlocks.splice(i,1); renderMBlocks(); };
-
-  function renderMBlocks() {
-    $('m_block_list').innerHTML = window._mBlocks.map((b,i)=>`
-      <div style="padding:.4rem 0;border-bottom:1px solid var(--border)">
-        <div class="row gap-sm">
-          <strong class="flex1">${b.block_no}</strong>
-          <button class="btn-icon" onclick="removeMBlock(${i})">🗑️</button>
-        </div>
-      </div>`).join('') || '<p class="no-data">ยังไม่มีบล็อก</p>';
+  function renderTransRows() {
+    const scannedRows = prepared.filter(b=>window._transScanned.has(b.block_no));
+    const extraRows = window._transExtra;
+    $('tr_matched_count').textContent = scannedRows.length;
+    const missing = prepared.filter(b=>!window._transScanned.has(b.block_no)).map(b=>b.block_no);
+    $('tr_missing').textContent = missing.join(', ') || '-';
+    $('tr_extra_list').textContent = extraRows.join(', ') || '-';
+    $('tr_rows').innerHTML = [
+      ...scannedRows.map(b=>`<tr><td><strong>${b.block_no}</strong></td><td>${b.internal_code||'-'}</td><td>${b.color_order||'-'}</td><td><span class="badge badge-green">ถูกต้อง</span></td></tr>`),
+      ...extraRows.map(bno=>`<tr class="row-red"><td><strong>${bno}</strong></td><td>NI</td><td>NI</td><td><span class="badge badge-red">เกินมา</span></td></tr>`),
+    ].join('') || `<tr><td colspan="4" class="no-data">ยังไม่ได้สแกน</td></tr>`;
   }
-  renderMBlocks();
+  renderTransRows();
 
-  window.submitInternal = async (type) => {
-    if (window._mBlocks.length === 0) { toast('กรุณาเพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
-    const body = {
-      date: $('m_date').value, time: $('m_time').value,
-      from_dept: $('m_from').value, to_dept: $('m_to').value,
-      emp_code: $('m_emp').value.trim()||null,
-      blocks: window._mBlocks,
-    };
-    const { data } = await api(`/api/internal/${type}`,'POST',body);
-    toast('สร้างเอกสาร: '+data.doc_no);
-    renderPage('internal');
+  window.finishTransport = async (docNo) => {
+    if (!$('tr_dept').value) { toast('กรุณาระบุหน่วยงานที่ขน','red'); return; }
+    if (!$('tr_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้ขน','red'); return; }
+    if (window._transScanned.size===0 && window._transExtra.length===0) { toast('กรุณาสแกนบล็อกอย่างน้อย 1 รายการ','red'); return; }
+    await api('/api/internal-transport?doc_no='+encodeURIComponent(docNo),'POST',{
+      transport_to_dept: $('tr_dept').value, transport_emp: $('tr_emp').value.trim(),
+      date: todayISO(), time: nowTime(),
+      matched: [...window._transScanned], extra: window._transExtra,
+    });
+    toast('จบขั้นตอนตรวจรับและขนส่ง');
+    renderPage('internalReceive');
   };
 }
 
-function pageInternalPrepare(app) { internalPrepareForm(app,'🧰 ขั้นตอนจัดเตรียม','prepare','internal','SUMMIT จัดเตรียม'); }
-function pageInternalTransport(app) { internalPrepareForm(app,'🚀 ขั้นตอนตรวจรับ+ขนส่ง','transport','internal','SUMMIT ขนส่ง'); }
-function pageInternalReceive(app) { internalPrepareForm(app,'🗃️ ขั้นตอนตรวจรับ+จัดเก็บ','store','internal','SUMMIT จัดเก็บ'); }
+// ── Folder: ขั้นตอนตรวจรับและจัดเก็บ ──
+async function pageInternalReceive(app) {
+  const { data: docs } = await api('/api/internal-list?status=transported');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>ตรวจรับและจัดเก็บ</h1></div>
+    <div class="page">
+      <div class="folder-tag">📁 Folder ขั้นตอนตรวจรับและจัดเก็บ</div>
+      <div class="card">
+        ${docs.length===0?`<p class="no-data">ไม่มีรายการรอจัดเก็บ</p>`:docs.map(d=>`
+          <div class="list-item" onclick="renderPage('internalStoreForm',{doc_no:'${d.doc_no}'})">
+            <div>
+              <div class="list-title">${internalFileName(d)}</div>
+              <div class="list-sub">หน่วยงานที่รับ ${d.to_dept||'-'}</div>
+            </div>
+            <div class="list-right"><span class="chevron">›</span></div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ── ฟอร์มตรวจรับและจัดเก็บ ──
+async function pageInternalStoreForm(app, {doc_no}) {
+  const { data: d } = await api('/api/internal-doc?doc_no='+encodeURIComponent(doc_no));
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  const scanned = d.blocks.filter(b=>b.scanned).concat(d.extra_blocks||[]);
+  window._storeLoc = {};
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internalReceive')">‹</button><h1>ตรวจรับและจัดเก็บ</h1></div>
+    <div class="page">
+      <datalist id="empList">${empOpts}</datalist>
+      <div class="card">
+        <table class="ftable">
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="auto">${d.to_dept||'-'}</td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้รับ <span class="req">*</span></td><td class="in">
+            <div class="row gap-sm"><input id="st2_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'st2_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('st2_emp').value=v;lookupEmp($('st2_emp'),'st2_emp_n')})">📷</button></div>
+            <div id="st2_emp_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">จำนวนบล็อกที่สแกนถูกต้อง</td><td class="auto">${d.blocks.filter(b=>b.scanned).length}</td></tr>
+          <tr><td class="lbl">จำนวนบล็อกทั้งหมด</td><td class="auto">${d.blocks.length}</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">ระบุที่จัดเก็บ (บังคับกรอกทุกรายการ)</div>
+        <div class="table-scroll"><table class="db1"><thead><tr><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>ลำดับสี</th><th>ที่จัดเก็บ</th></tr></thead><tbody>
+          ${scanned.map((b,i)=>`<tr><td><strong>${b.block_no}</strong></td><td>${b.internal_code||'-'}</td><td>${b.color_order||'-'}</td>
+            <td><input id="loc_${i}" placeholder="เช่น A1/1" oninput="setStoreLoc('${b.block_no}',this.value)" style="width:110px"/></td></tr>`).join('')||`<tr><td colspan="4" class="no-data">ไม่มีบล็อกที่สแกนถูกต้อง</td></tr>`}
+        </tbody></table></div>
+      </div>
+      <button class="btn-danger" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="finishStore2('${doc_no}')">จบขั้นตอน</button>
+    </div>`;
+  window.setStoreLoc = (bno, val) => { window._storeLoc[bno] = val; };
+  window.finishStore2 = async (docNo) => {
+    if (!$('st2_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้รับ','red'); return; }
+    for (const b of scanned) {
+      if (!(window._storeLoc[b.block_no]||'').trim()) { toast('กรุณาระบุที่จัดเก็บให้ครบทุกบล็อก','red'); return; }
+    }
+    await api('/api/internal-store?doc_no='+encodeURIComponent(docNo),'POST',{
+      store_emp: $('st2_emp').value.trim(), store_dept: d.to_dept,
+      date: todayISO(), time: nowTime(), locations: window._storeLoc,
+    });
+    toast('จบขั้นตอนตรวจรับและจัดเก็บ');
+    renderPage('internal');
+  };
+}
 
 // ── ส่งบล็อกขึงผ้า ──
 function pageExternalStretchSend(app) {

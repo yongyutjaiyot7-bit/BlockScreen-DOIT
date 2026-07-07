@@ -10,7 +10,7 @@ import {
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
   summitPressInspect, receivePress,
   createStretchSend, listStretchSendRows, createStretchReceive, listStretchReceiveRows,
-  createInternalDoc, getInternalDoc, listInternalDocs, submitInternalDoc,
+  createInternalDoc, getInternalDoc, listInternalDocs, listInternalDocsByStatus, completeTransport, completeStore,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
   bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock,
@@ -93,23 +93,18 @@ app.get('/api/stretch-send-rows', wrap((req, res) => ok(res, listStretchSendRows
 app.post('/api/stretch-receive', wrap((req, res) => ok(res, createStretchReceive(req.body || {}))));
 app.get('/api/stretch-receive-rows', wrap((req, res) => ok(res, listStretchReceiveRows())));
 
-// ---------- MODULE 3: INTERNAL TRANSFER ----------
+// ---------- MODULE 3: INTERNAL TRANSFER (จัดเตรียม → ขนส่ง/ตรวจรับ → ตรวจรับ/จัดเก็บ) ----------
 app.get('/api/internal', wrap((req, res) => ok(res, listInternalDocs(req.query.type))));
-app.get('/api/internal/:doc_no', wrap((req, res) => {
-  const d = getInternalDoc(req.params.doc_no);
+app.post('/api/internal/prepare', wrap((req, res) => ok(res, createInternalDoc('prepare', req.body || {}))));
+// doc_no มี "/" จึงใช้ query param แทน path param
+app.get('/api/internal-doc', wrap((req, res) => {
+  const d = getInternalDoc(req.query.doc_no);
   if (!d) return err(res, 'ไม่พบเอกสาร', 404);
   ok(res, d);
 }));
-app.post('/api/internal/:type', wrap((req, res) => ok(res, createInternalDoc(req.params.type, req.body || {}))));
-app.post('/api/internal/:doc_no/scan', wrap((req, res) => {
-  const doc = getInternalDoc(req.params.doc_no);
-  if (!doc) return err(res, 'ไม่พบเอกสาร', 404);
-  ok(res, { matched: doc.blocks.some(b => b.block_no === req.body.block_no) });
-}));
-app.post('/api/internal/:doc_no/submit', wrap((req, res) => {
-  submitInternalDoc(req.params.doc_no, req.body || {});
-  ok(res, getInternalDoc(req.params.doc_no));
-}));
+app.get('/api/internal-list', wrap((req, res) => ok(res, listInternalDocsByStatus(req.query.status))));
+app.post('/api/internal-transport', wrap((req, res) => ok(res, completeTransport(req.query.doc_no, req.body || {}))));
+app.post('/api/internal-store', wrap((req, res) => ok(res, completeStore(req.query.doc_no, req.body || {}))));
 
 // ---------- MODULE 4: EXTERNAL TRANSFER ----------
 app.get('/api/external', wrap((req, res) => ok(res, listExternalDocs())));

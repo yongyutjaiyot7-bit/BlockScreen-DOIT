@@ -247,6 +247,8 @@ tr.row-red td{background:var(--red-soft);}
 .ftable .in{background:#fefce8;}
 .ftable .in select,.ftable .in input{background:#fff;}
 .emp-name{font-size:.82rem;font-weight:700;margin-top:.35rem;min-height:1em;}
+.req{color:var(--red);font-weight:800;}
+.prep-block-row{border:1px solid var(--border);border-radius:10px;padding:.6rem;margin-bottom:.6rem;background:#fafcff;}
 .blk-row{display:flex;align-items:center;gap:.5rem;padding:.45rem .2rem;border-bottom:1px solid var(--border);}
 .blk-row:last-child{border-bottom:none;}
 .blk-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent);

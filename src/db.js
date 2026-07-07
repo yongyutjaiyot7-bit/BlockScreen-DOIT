@@ -424,27 +424,72 @@ export function listStretchReceiveRows() {
   });
   return out;
 }
+// ── จัดเตรียม / ขนส่ง-ตรวจรับ / ตรวจรับ-จัดเก็บ (M-doc pipeline) ──
 export function createInternalDoc(type, data) {
   const doc_no = nextDocNo('M', 'internal_docs');
   const ts = now();
   run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
-    [doc_no, type, data.from_dept||null, data.to_dept||null, data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'draft', ts]);
-  (data.blocks||[]).forEach(b => run('INSERT INTO internal_doc_blocks(id,doc_no,block_no) VALUES(?,?,?)', [uuid(),doc_no,b.block_no]));
+    [doc_no, type, data.from_dept||null, data.to_dept||null, data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'prepared', ts]);
+  (data.blocks||[]).forEach(b => {
+    const blk = getBlock(b.block_no);
+    const films = b.films || [];
+    run('INSERT INTO internal_doc_blocks(id,doc_no,block_no,internal_code,color_order,revision,fabric_no) VALUES(?,?,?,?,?,?,?)',
+      [uuid(), doc_no, b.block_no,
+       films.map(f=>f.internal_code||'').filter(Boolean).join(',') || null,
+       films.map(f=>f.color_order||'').filter(Boolean).join(',') || null,
+       films.map(f=>f.revision||'').filter(Boolean).join(',') || null,
+       blk?.fabric_no || null]);
+  });
   return get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
 }
 export function getInternalDoc(doc_no) {
   const doc = get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
-  if (doc) doc.blocks = all('SELECT * FROM internal_doc_blocks WHERE doc_no=?', [doc_no]);
+  if (doc) {
+    doc.blocks = all('SELECT * FROM internal_doc_blocks WHERE doc_no=? AND is_extra=0', [doc_no]);
+    doc.extra_blocks = all('SELECT * FROM internal_doc_blocks WHERE doc_no=? AND is_extra=1', [doc_no]);
+    doc.emp_name = empFirstName(doc.emp_code);
+  }
   return doc;
 }
 export function listInternalDocs(type) {
-  if (type) return all('SELECT * FROM internal_docs WHERE doc_type=? ORDER BY created_at DESC LIMIT 100', [type]);
-  return all('SELECT * FROM internal_docs ORDER BY created_at DESC LIMIT 100');
+  if (type) return all("SELECT * FROM internal_docs WHERE doc_type='prepare' AND status=? ORDER BY created_at DESC LIMIT 100", [type]);
+  return all("SELECT * FROM internal_docs WHERE doc_type='prepare' ORDER BY created_at DESC LIMIT 100");
 }
 export function submitInternalDoc(doc_no, data) {
   const ts = now();
   run('UPDATE internal_docs SET status=?,emp_code=?,doc_date=?,doc_time=? WHERE doc_no=?',
     ['submitted', data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
+}
+export function completeTransport(doc_no, data) {
+  const ts = now();
+  const matched = data.matched || [];   // block_no ที่สแกนตรงกับรายการเตรียม
+  const extra = data.extra || [];        // block_no ที่สแกนเกินมา
+  matched.forEach(bno => run('UPDATE internal_doc_blocks SET scanned=1 WHERE doc_no=? AND block_no=?', [doc_no, bno]));
+  extra.forEach(bno => {
+    const blk = getBlock(bno);
+    run('INSERT INTO internal_doc_blocks(id,doc_no,block_no,fabric_no,scanned,is_extra) VALUES(?,?,?,?,1,1)',
+      [uuid(), doc_no, bno, blk?.fabric_no||null]);
+  });
+  run("UPDATE internal_docs SET status='transported', to_dept=COALESCE(?,to_dept), emp_code=?, doc_date=?, doc_time=? WHERE doc_no=?",
+    [data.transport_to_dept||null, data.transport_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
+  return get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
+}
+export function completeStore(doc_no, data) {
+  const ts = now();
+  const locations = data.locations || {};  // { block_no: location }
+  Object.entries(locations).forEach(([bno, loc]) => {
+    run('UPDATE internal_doc_blocks SET storage_location=? WHERE doc_no=? AND block_no=?', [loc, doc_no, bno]);
+    run('UPDATE blocks SET status=?,location=?,current_dept=?,updated_at=? WHERE block_no=?',
+      ['available', loc, data.store_dept||'BL', ts, bno]);
+  });
+  run("UPDATE internal_docs SET status='stored', emp_code=?, doc_date=?, doc_time=? WHERE doc_no=?",
+    [data.store_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
+  return get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
+}
+export function listInternalDocsByStatus(status) {
+  const rows = all("SELECT * FROM internal_docs WHERE doc_type='prepare' AND status=? ORDER BY doc_no DESC LIMIT 200", [status]);
+  rows.forEach(r => { r.emp_name = empFirstName(r.emp_code); });
+  return rows;
 }
 
 // ── MODULE 4: External transfer ──
