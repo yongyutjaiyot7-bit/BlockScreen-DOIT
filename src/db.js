@@ -131,6 +131,10 @@ CREATE TABLE IF NOT EXISTS receive_inspections (
 // Migrations for existing databases (ignore if column already exists)
 try { getDb().run('ALTER TABLE clean_docs ADD COLUMN block_no TEXT'); } catch {}
 try { getDb().run('ALTER TABLE clean_docs ADD COLUMN size_label TEXT'); } catch {}
+try { getDb().run('ALTER TABLE press_requests ADD COLUMN receiver_emp TEXT'); } catch {}
+try { getDb().run('ALTER TABLE press_requests ADD COLUMN receive_date TEXT'); } catch {}
+try { getDb().run('ALTER TABLE press_requests ADD COLUMN receive_time TEXT'); } catch {}
+try { getDb().run('ALTER TABLE press_requests ADD COLUMN store_to_dept TEXT'); } catch {}
 save();
 
 // ── Seed master data (from Excel: 79f768a7-...Mobile_barcode_BL2.1.xlsx) ──
@@ -331,14 +335,40 @@ export function summitPressInspect(doc_no) {
   run("UPDATE press_requests SET status='inspect_done' WHERE doc_no=?", [doc_no]);
   return get('SELECT * FROM press_requests WHERE doc_no=?', [doc_no]);
 }
+export function receivePress(doc_no, data) {
+  // ตรวจรับและส่ง (ลงชื่อผู้ตรวจรับ) → ย้ายไป Folder จัดเก็บ
+  const ts = now();
+  run("UPDATE press_requests SET status='received', receiver_emp=?, receive_date=?, receive_time=? WHERE doc_no=?",
+    [data.receiver_emp || null, data.receive_date || ts.slice(0,10), data.receive_time || ts.slice(11,16), doc_no]);
+  return get('SELECT * FROM press_requests WHERE doc_no=?', [doc_no]);
+}
 export function saveBlockStorage(doc_no, data) {
   const ts = now();
   run('INSERT OR REPLACE INTO block_storage(id,doc_no,new_block_no,storage_location,storer_emp,store_date,store_time,remarks,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
     [uuid(), doc_no, data.new_block_no||null, data.storage_location||null, data.storer_emp||null,
      data.store_date||ts.slice(0,10), data.store_time||ts.slice(11,16), data.remarks||null, ts]);
-  run('UPDATE press_requests SET status=? WHERE doc_no=?', ['stored', doc_no]);
+  run("UPDATE press_requests SET status='stored', store_to_dept=? WHERE doc_no=?", [data.to_dept||null, doc_no]);
   if (data.new_block_no) run('INSERT OR REPLACE INTO blocks(block_no,size_label,status,location,current_dept,updated_at) VALUES(?,?,?,?,?,?)',
     [data.new_block_no, data.frame_size||null, 'available', data.storage_location||null, 'BL', ts]);
+}
+// DATA BASE 3 — ใบเบิกจ่ายบล็อก (รายการที่จัดเก็บแล้ว)
+export function listStoredPress() {
+  const rows = all("SELECT * FROM press_requests WHERE status='stored' ORDER BY doc_no DESC LIMIT 500");
+  return rows.map(r => {
+    const films = all('SELECT * FROM press_films WHERE doc_no=?', [r.doc_no]);
+    const st = get('SELECT * FROM block_storage WHERE doc_no=?', [r.doc_no]);
+    return {
+      ...r,
+      internal_codes: films.map(f=>f.internal_code).filter(Boolean).join(', '),
+      color_orders: films.map(f=>f.color_order).filter(Boolean).join(', '),
+      revisions: films.map(f=>f.revision).filter(Boolean).join(', '),
+      sender_name: empFirstName(r.receiver_emp),
+      receiver_name: empFirstName(st?.storer_emp),
+      storage_location: st?.storage_location || '',
+      store_remarks: st?.remarks || '',
+      store_date: st?.store_date || '',
+    };
+  });
 }
 
 // ── MODULE 3: Internal transfer ──

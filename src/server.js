@@ -7,8 +7,8 @@ import { networkInterfaces } from 'node:os';
 import {
   getEmployee, getBlock, getMasterData, addBlock, listBlocks,
   createCleanDoc, listCleanDocs, getCleanDoc,
-  createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage,
-  summitPressInspect,
+  createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
+  summitPressInspect, receivePress,
   createInternalDoc, getInternalDoc, listInternalDocs, submitInternalDoc,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
@@ -77,6 +77,8 @@ app.get('/api/press-doc', wrap((req, res) => {
 }));
 app.post('/api/press-inspect', wrap((req, res) => ok(res, saveInspection(req.query.doc_no, req.body || {}))));
 app.post('/api/press-summit', wrap((req, res) => ok(res, summitPressInspect(req.query.doc_no))));
+app.post('/api/press-receive', wrap((req, res) => ok(res, receivePress(req.query.doc_no, req.body || {}))));
+app.get('/api/press-stored', wrap((req, res) => ok(res, listStoredPress())));
 app.post('/api/press-store', wrap((req, res) => {
   saveBlockStorage(req.query.doc_no, req.body || {});
   ok(res, getPressRequest(req.query.doc_no));

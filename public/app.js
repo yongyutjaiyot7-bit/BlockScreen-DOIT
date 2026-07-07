@@ -30,7 +30,9 @@ function renderPage(page, params = {}) {
     pressNew: pagePressNew,
     pressDetail: pagePressDetail,
     pressInspect: pagePressInspect,
+    pressReceive: pagePressReceive,
     pressStore: pagePressStore,
+    pressDB3: pagePressDB3,
     internal: pageInternal,
     internalPrepare: pageInternalPrepare,
     internalTransport: pageInternalTransport,
@@ -286,7 +288,7 @@ const PRESS_VIEWS = {
   all:     { title:'ร้องขออัดบล็อก', status:null,          canCreate:true,  empty:'ยังไม่มีรายการ' },
   pending: { title:'บล็อกรออัด',      status:null,          canCreate:false, empty:'ไม่มีบล็อกรออัด' },
   inspect: { title:'ตรวจรับ',          status:'inspect_done',canCreate:false, empty:'ไม่มีรายการตรวจรับ' },
-  store:   { title:'จัดเก็บ',          status:'inspect_done',canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
+  store:   { title:'จัดเก็บ',          status:'received',    canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
 };
 function pressFileName(d) {
   // วัน/เดือน/ปี & หน่วยงาน & เลขบล็อก(ใหม่ถ้ามี) & เลขที่เอกสาร (+&V1 เฉพาะตอนรอ SUMMIT)
@@ -316,11 +318,11 @@ async function pagePress(app, { filter = 'all' } = {}) {
             : docs.map(d=>`
               <div class="list-item" onclick="renderPage('pressInspect',{doc_no:'${d.doc_no}'})">
                 <div>
-                  <div class="list-title">${pressFileName(d)}</div>
+                  <div class="list-title">${fmtDatePad(d.date)}&${d.dept}&${d.new_block_no||d.old_block_no}&${d.doc_no}${d.status==='inspected'?'<span style="color:var(--red);font-weight:800">&V1</span>':''}</div>
                   <div class="list-sub">บล็อกเดิม ${d.old_block_no}${d.new_block_no?' → ใหม่ '+d.new_block_no:''} · ${d.dept}</div>
                 </div>
                 <div class="list-right">
-                  <span class="badge ${d.status==='inspected'?'badge-blue':'badge-yellow'}">${d.status==='inspected'?'รอจบขั้นตอน':'รอดำเนินการ'}</span>
+                  <span class="badge ${d.status==='inspected'?'badge-red':'badge-yellow'}">${d.status==='inspected'?'รอจบขั้นตอน':'รอดำเนินการ'}</span>
                   <div class="chevron">›</div>
                 </div>
               </div>`).join('')}
@@ -329,7 +331,7 @@ async function pagePress(app, { filter = 'all' } = {}) {
     return;
   }
 
-  // "ตรวจรับ" — Folder ผลหลัง SUMMIT (จบขั้นตอนอัดบล็อก)
+  // "ตรวจรับ" — Folder หลังอัดบล็อก → คลิกเข้าฟอร์มตรวจรับและส่ง
   if (filter === 'inspect') {
     app.innerHTML = `
       <div class="topnav">
@@ -342,7 +344,32 @@ async function pagePress(app, { filter = 'all' } = {}) {
           ${docs.length===0
             ? `<p class="no-data">ไม่มีรายการตรวจรับ</p>`
             : docs.map(d=>`
-              <div class="list-item" onclick="renderPage('pressDetail',{doc_no:'${d.doc_no}'})">
+              <div class="list-item" onclick="renderPage('pressReceive',{doc_no:'${d.doc_no}'})">
+                <div>
+                  <div class="list-title">${pressFileName(d)}</div>
+                  <div class="list-sub">บล็อกใหม่ ${d.new_block_no||'-'} · ${d.dept}</div>
+                </div>
+                <div class="list-right"><span class="chevron">›</span></div>
+              </div>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  // "จัดเก็บ" — Folder หลังตรวจรับและส่ง
+  if (filter === 'store') {
+    app.innerHTML = `
+      <div class="topnav">
+        <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
+        <h1>จัดเก็บ</h1>
+      </div>
+      <div class="page">
+        <div class="folder-tag">📁 Folder จัดเก็บ</div>
+        <div class="card">
+          ${docs.length===0
+            ? `<p class="no-data">ไม่มีบล็อกรอจัดเก็บ</p>`
+            : docs.map(d=>`
+              <div class="list-item" onclick="renderPage('pressStore',{doc_no:'${d.doc_no}'})">
                 <div>
                   <div class="list-title">${pressFileName(d)}</div>
                   <div class="list-sub">บล็อกใหม่ ${d.new_block_no||'-'} · ${d.dept}</div>
@@ -691,7 +718,7 @@ async function pagePressInspect(app, {doc_no}) {
   }
   function enableSummit() {
     const s = $('btn_summit');
-    s.disabled = false; s.style.cssText = 'padding:.9rem;font-size:1rem'; s.className = 'flex1 btn-success';
+    s.disabled = false; s.style.cssText = 'padding:.9rem;font-size:1rem'; s.className = 'flex1 btn-danger';
   }
 
   window.saveInspect = async (docNo) => {
@@ -726,50 +753,136 @@ async function pagePressInspect(app, {doc_no}) {
   }
 }
 
-function pagePressStore(app, {doc_no}) {
+// ── ตรวจรับและส่ง (จาก Folder ตรวจรับ) ──
+const RECEIVE_ROWS = [
+  {key:'film_correct_pass', label:'ความถูกต้องของบล็อก', std:'TAG ถูกต้อง', method:'สายตา'},
+  {key:'register_pass', label:'Register (Mark)', std:'ตรงกัน', method:'ฟิล์มพิมพ์'},
+  {key:'adhesive_block_pass', label:'กาวอุดตันบริเวณภาพ', std:'ไม่อุดตัน', method:'สายตา'},
+  {key:'sharpness_pass', label:'ความคมชัดของภาพ', std:'คมชัด', method:'สายตา'},
+  {key:'dot_pass', label:'ตรวจสอบฟิล์มทาบกับบล็อก', std:'ไม่กลับด้าน ภาพสมบูรณ์', method:'สายตา'},
+];
+async function pagePressReceive(app, {doc_no}) {
+  const { data: d } = await api(`/api/press-doc?doc_no=${encodeURIComponent(doc_no)}`);
+  const f = d.films||[]; const join = k=>f.map(x=>x[k]).filter(v=>v!=null&&v!=='').join(', ')||'-';
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  const state={}; RECEIVE_ROWS.forEach(r=>state[r.key]=null); window._inspState=state;
   app.innerHTML = `
-    <div class="topnav">
-      <button class="back-btn" onclick="renderPage('pressDetail',{doc_no:'${doc_no}'})">‹</button>
-      <h1>จัดเก็บบล็อก</h1>
-    </div>
+    <div class="topnav"><button class="back-btn" onclick="renderPage('press',{filter:'inspect'})">‹</button><h1>ตรวจรับและส่ง</h1></div>
     <div class="page">
-      <div class="card">
-        <div class="card-title">${doc_no} – ขั้นตอนที่ 4 จัดเก็บ</div>
-        <div class="form-group"><label>บล็อกใหม่</label>
-          <div class="row gap-sm">
-            <input id="s_new" class="flex1" placeholder="เลขบล็อกใหม่"/>
-            <button class="scan-btn" onclick="openScan(v=>$('s_new').value=v)">📷</button>
-          </div>
-        </div>
-        <div class="form-group"><label>ที่จัดเก็บ (เช่น A1/1)</label><input id="s_loc" placeholder="A1/1"/></div>
-        <div class="form-group"><label>หมายเหตุ</label><textarea id="s_remark" rows="2"></textarea></div>
-        <div class="grid2">
-          <div class="form-group"><label>วันที่จัดเก็บ</label><input type="date" id="s_date" value="${todayISO()}"/></div>
-          <div class="form-group"><label>เวลา</label><input type="time" id="s_time" value="${nowTime()}"/></div>
-        </div>
-        <div class="form-group"><label>รหัสพนักงานผู้จัดเก็บ</label>
-          <div class="row gap-sm">
-            <input id="s_emp" class="flex1" oninput="lookupEmp(this,'s_emp_n')"/>
-            <button class="scan-btn" onclick="openScan(v=>{$('s_emp').value=v;lookupEmp($('s_emp'),'s_emp_n')})">📷</button>
-          </div>
-          <small id="s_emp_n" class="muted"></small>
-        </div>
+      <datalist id="empList">${empOpts}</datalist>
+      <div class="ptabs">
+        <button class="ptab" onclick="renderPage('press',{filter:'all'})">ร้องขออัดบล็อก</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'pending'})">บล็อกรออัด</button>
+        <button class="ptab active">ตรวจรับ</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'store'})">จัดเก็บ</button>
       </div>
-      <button class="btn-success" style="width:100%" onclick="submitStore('${doc_no}')">SUBMIT จัดเก็บ</button>
+      <div class="card"><div class="card-title">ข้อมูลชุดที่ 1</div>
+        <table class="ftable">
+          <tr><td class="lbl">หน่วยงานร้องขอ</td><td class="auto">${d.dept||'-'}</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${fmtDate(d.date)}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${d.time||'-'} น.</td></tr>
+          <tr><td class="lbl">เลขที่บล็อก (ใหม่)</td><td class="auto">${d.new_block_no||'-'}</td></tr>
+          <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="r_frame">-</td></tr>
+          <tr><td class="lbl">รหัสภายใน</td><td class="auto">${join('internal_code')}</td></tr>
+          <tr><td class="lbl">ลำดับสี</td><td class="auto">${join('color_order')}</td></tr>
+          <tr><td class="lbl">Revision</td><td class="auto">${join('revision')}</td></tr>
+          <tr><td class="lbl">เบอร์ผ้า</td><td class="auto">${join('fabric_no')}</td></tr>
+        </table>
+      </div>
+      <div class="card"><div class="card-title">ผลการตรวจรับ</div>
+        <div class="table-scroll"><table class="insp">
+          <thead><tr><th>สิ่งที่ต้องควบคุม</th><th>เกณฑ์</th><th>วิธี</th><th>ผ่าน</th><th>ไม่ผ่าน</th></tr></thead>
+          <tbody>${RECEIVE_ROWS.map(r=>`<tr><td>${r.label}</td><td class="sub">${r.std}</td><td class="sub">${r.method}</td>
+            <td class="ctr"><button class="pfbtn" id="pf_pass_${r.key}" onclick="setCheck('${r.key}',1)"></button></td>
+            <td class="ctr"><button class="pfbtn" id="pf_fail_${r.key}" onclick="setCheck('${r.key}',0)"></button></td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+      <div class="card"><div class="card-title">ผู้ตรวจรับและส่ง</div>
+        <table class="ftable">
+          <tr><td class="lbl">รหัสพนักงาน</td><td class="in">
+            <div class="row gap-sm"><input id="r_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="onREmp(this)"/><button class="scan-btn" onclick="openScan(v=>{$('r_emp').value=v;onREmp($('r_emp'));})">📷</button></div>
+            <div id="r_emp_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto" id="r_date">-</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto" id="r_time">-</td></tr>
+        </table>
+      </div>
+      <button class="btn-danger" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="doReceive('${doc_no}')">จบขั้นตอน</button>
+      <p class="scan-hint" style="text-align:center;margin-top:.5rem">ต้องระบุ/สแกนผู้ตรวจรับและส่ง แล้วจึงจบขั้นตอน → ย้ายไป Folder จัดเก็บ</p>
     </div>`;
+  if (d.new_block_no) { try{ const {data:b}=await api('/api/block/'+encodeURIComponent(d.new_block_no)); $('r_frame').textContent=b.size_label||'-'; }catch{} }
+  window.setCheck=(key,val)=>{const cur=window._inspState[key];const next=cur===val?null:val;window._inspState[key]=next;$(`pf_pass_${key}`).className='pfbtn'+(next===1?' on-pass':'');$(`pf_fail_${key}`).className='pfbtn'+(next===0?' on-fail':'');};
+  window.onREmp=(inp)=>{lookupEmp(inp,'r_emp_n');if(inp.value.trim()){$('r_date').textContent=todayStr();$('r_time').textContent=nowTime()+' น.';}else{$('r_date').textContent='-';$('r_time').textContent='-';}};
+  window.doReceive=async(docNo)=>{const e=$('r_emp').value.trim();if(!e){toast('ต้องระบุ/สแกนผู้ตรวจรับและส่ง','red');return;}await api(`/api/press-receive?doc_no=${encodeURIComponent(docNo)}`,'POST',{receiver_emp:e,receive_date:todayISO(),receive_time:nowTime()});toast('จบขั้นตอนตรวจรับ — ย้ายไป Folder จัดเก็บ');renderPage('press',{filter:'store'});};
+}
 
-  window.submitStore = async (doc_no) => {
-    const body = {
-      new_block_no: $('s_new').value.trim()||null,
-      storage_location: $('s_loc').value.trim()||null,
-      remarks: $('s_remark').value.trim()||null,
-      store_date: $('s_date').value,
-      store_time: $('s_time').value,
-      storer_emp: $('s_emp').value.trim()||null,
-    };
-    await api(`/api/press-store?doc_no=${encodeURIComponent(doc_no)}`,'POST',body);
-    toast('จัดเก็บสำเร็จ');
-    renderPage('pressDetail',{doc_no});
+// ── จัดเก็บ (จาก Folder จัดเก็บ) ──
+async function pagePressStore(app, {doc_no}) {
+  const { data: d } = await api(`/api/press-doc?doc_no=${encodeURIComponent(doc_no)}`);
+  const f=d.films||[]; const join=k=>f.map(x=>x[k]).filter(v=>v!=null&&v!=='').join(', ')||'-';
+  const deptOpts=master.departments.map(x=>`<option value="${x.id}" ${x.id===d.dept?'selected':''}>${x.id}</option>`).join('');
+  const empOpts=master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('press',{filter:'store'})">‹</button><h1>จัดเก็บ</h1></div>
+    <div class="page">
+      <datalist id="empList">${empOpts}</datalist>
+      <div class="ptabs">
+        <button class="ptab" onclick="renderPage('press',{filter:'all'})">ร้องขออัดบล็อก</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'pending'})">บล็อกรออัด</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'inspect'})">ตรวจรับ</button>
+        <button class="ptab active">จัดเก็บ</button>
+      </div>
+      <div class="card"><div class="card-title">ข้อมูลชุดที่ 1</div>
+        <table class="ftable">
+          <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="st_dept">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">เลขที่บล็อก</td><td class="auto">${d.new_block_no||'-'}</td></tr>
+          <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="st_frame">-</td></tr>
+          <tr><td class="lbl">รหัสภายใน</td><td class="auto">${join('internal_code')}</td></tr>
+          <tr><td class="lbl">ลำดับสี</td><td class="auto">${join('color_order')}</td></tr>
+          <tr><td class="lbl">Revision</td><td class="auto">${join('revision')}</td></tr>
+          <tr><td class="lbl">เบอร์ผ้า</td><td class="auto">${join('fabric_no')}</td></tr>
+          <tr><td class="lbl">ที่จัดเก็บ</td><td class="in"><div class="row gap-sm"><input id="st_loc" class="flex1" placeholder="เช่น A1/1 (สแกน/พิมพ์)"/><button class="scan-btn" onclick="openScan(v=>$('st_loc').value=v)">📷</button></div></td></tr>
+          <tr><td class="lbl">หมายเหตุ</td><td class="in"><input id="st_remark" placeholder="ระบุเพิ่มเติม"/></td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้จัดเก็บ</td><td class="in"><div class="row gap-sm"><input id="st_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'st_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('st_emp').value=v;lookupEmp($('st_emp'),'st_emp_n')})">📷</button></div><div id="st_emp_n" class="emp-name"></div></td></tr>
+        </table>
+      </div>
+      <button class="btn-danger" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="doStore('${doc_no}')">จบขั้นตอน</button>
+    </div>`;
+  if (d.new_block_no) { try{ const {data:b}=await api('/api/block/'+encodeURIComponent(d.new_block_no)); $('st_frame').textContent=b.size_label||'-'; }catch{} }
+  window.doStore=async(docNo)=>{
+    const loc=$('st_loc').value.trim(), emp=$('st_emp').value.trim();
+    if(!loc){toast('ระบุที่จัดเก็บ','red');return;}
+    if(!emp){toast('ระบุ/สแกนพนักงานผู้จัดเก็บ','red');return;}
+    await api(`/api/press-store?doc_no=${encodeURIComponent(docNo)}`,'POST',{new_block_no:d.new_block_no,frame_size:$('st_frame').textContent,storage_location:loc,remarks:$('st_remark').value.trim()||null,storer_emp:emp,store_date:todayISO(),store_time:nowTime(),to_dept:$('st_dept').value});
+    toast('จบขั้นตอนจัดเก็บ');
+    renderPage('pressDB3');
+  };
+}
+
+// ── DATA BASE 3 — ฟอร์มใบเบิกจ่ายบล็อก ──
+async function pagePressDB3(app) {
+  const { data: rows } = await api('/api/press-stored');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('pressMenu')">‹</button><h1>DATA BASE 3</h1>
+      <button class="btn-primary btn-sm" onclick="exportDB3()">⬇ Excel</button></div>
+    <div class="page"><div class="card"><div class="card-title">ฟอร์มใบเบิกจ่ายบล็อก</div>
+      <div class="table-scroll"><table class="db1"><thead><tr>
+        <th>วันที่</th><th>เลขที่เอกสาร</th><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>จากหน่วยงาน</th><th>ผู้ส่ง</th><th>Revision</th><th>สี</th><th>ผู้รับ</th><th>ถึงหน่วยงาน</th><th>ที่จัดเก็บ</th><th>หมายเหตุ</th>
+      </tr></thead><tbody>
+      ${rows.length===0?`<tr><td colspan="12" class="no-data">ยังไม่มีรายการ</td></tr>`:rows.map(r=>`<tr>
+        <td>${fmtDate(r.store_date||r.date)}</td><td><strong>${r.doc_no}</strong></td><td><strong>${r.new_block_no||'-'}</strong></td>
+        <td style="font-size:.75rem">${r.internal_codes||'-'}</td><td>บล็อก</td><td>${r.sender_name||'-'}</td>
+        <td>${r.revisions||'-'}</td><td>${r.color_orders||'-'}</td><td>${r.receiver_name||'-'}</td>
+        <td>${r.store_to_dept||'-'}</td><td>${r.storage_location||'-'}</td><td>${r.store_remarks||'-'}</td>
+      </tr>`).join('')}
+      </tbody></table></div>
+    </div></div>`;
+  window.exportDB3=()=>{
+    const data=rows.map(r=>({'วันที่':fmtDate(r.store_date||r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.new_block_no,'รหัสภายใน':r.internal_codes,'จากหน่วยงาน':'บล็อก','ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'ถึงหน่วยงาน':r.store_to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.store_remarks}));
+    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'DB3');XLSX.writeFile(wb,'DataBase3.xlsx');
   };
 }
 
