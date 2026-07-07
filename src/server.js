@@ -9,6 +9,7 @@ import {
   createCleanDoc, listCleanDocs, getCleanDoc,
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
   summitPressInspect, receivePress,
+  createStretchSend, listStretchSendRows, createStretchReceive, listStretchReceiveRows,
   createInternalDoc, getInternalDoc, listInternalDocs, submitInternalDoc,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
@@ -83,6 +84,14 @@ app.post('/api/press-store', wrap((req, res) => {
   saveBlockStorage(req.query.doc_no, req.body || {});
   ok(res, getPressRequest(req.query.doc_no));
 }));
+
+// ---------- ส่งบล็อกขึงผ้า ----------
+app.post('/api/stretch-send', wrap((req, res) => ok(res, createStretchSend(req.body || {}))));
+app.get('/api/stretch-send-rows', wrap((req, res) => ok(res, listStretchSendRows())));
+
+// ---------- รับบล็อกขึงผ้า ----------
+app.post('/api/stretch-receive', wrap((req, res) => ok(res, createStretchReceive(req.body || {}))));
+app.get('/api/stretch-receive-rows', wrap((req, res) => ok(res, listStretchReceiveRows())));
 
 // ---------- MODULE 3: INTERNAL TRANSFER ----------
 app.get('/api/internal', wrap((req, res) => ok(res, listInternalDocs(req.query.type))));

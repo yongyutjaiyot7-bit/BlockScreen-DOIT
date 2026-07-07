@@ -135,6 +135,10 @@ try { getDb().run('ALTER TABLE press_requests ADD COLUMN receiver_emp TEXT'); } 
 try { getDb().run('ALTER TABLE press_requests ADD COLUMN receive_date TEXT'); } catch {}
 try { getDb().run('ALTER TABLE press_requests ADD COLUMN receive_time TEXT'); } catch {}
 try { getDb().run('ALTER TABLE press_requests ADD COLUMN store_to_dept TEXT'); } catch {}
+try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN size_label TEXT'); } catch {}
+try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN tension_value REAL'); } catch {}
+try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN twist_pass INTEGER'); } catch {}
+try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN frame_pass INTEGER'); } catch {}
 save();
 
 // ── Seed master data (from Excel: 79f768a7-...Mobile_barcode_BL2.1.xlsx) ──
@@ -372,6 +376,54 @@ export function listStoredPress() {
 }
 
 // ── MODULE 3: Internal transfer ──
+// ส่งบล็อกขึงผ้า (OU prefix)
+export function createStretchSend(data) {
+  const doc_no = nextDocNo('OU', 'internal_docs');
+  const ts = now();
+  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+    [doc_no, 'stretch_send', data.from_dept||null, data.to_dept||null, data.sender_emp||null,
+     data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'sent', ts]);
+  (data.blocks||[]).forEach(bno => run('INSERT INTO internal_doc_blocks(id,doc_no,block_no) VALUES(?,?,?)', [uuid(), doc_no, bno]));
+  return { doc_no, count: (data.blocks||[]).length };
+}
+export function listStretchSendRows() {
+  const docs = all("SELECT * FROM internal_docs WHERE doc_type='stretch_send' ORDER BY doc_no DESC LIMIT 500");
+  const out = [];
+  docs.forEach(d => {
+    const sender = empFirstName(d.emp_code);
+    all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).forEach(b => {
+      const blk = getBlock(b.block_no);
+      out.push({ date: d.doc_date, doc_no: d.doc_no, block_no: b.block_no, size_label: blk?.size_label || '',
+        from_dept: d.from_dept, sender_name: sender, to_dept: d.to_dept });
+    });
+  });
+  return out;
+}
+// รับบล็อกขึงผ้า (IN prefix)
+export function createStretchReceive(data) {
+  const doc_no = nextDocNo('IN', 'internal_docs');
+  const ts = now();
+  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+    [doc_no, 'stretch_receive', data.from_dept||null, data.to_dept||null, data.receiver_emp||null,
+     data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'received', ts]);
+  (data.blocks||[]).forEach(b => run('INSERT INTO internal_doc_blocks(id,doc_no,block_no,fabric_no,size_label,tension_value,twist_pass,frame_pass) VALUES(?,?,?,?,?,?,?,?)',
+    [uuid(), doc_no, b.block_no, b.fabric_no||null, b.size_label||null, b.tension_value||null,
+     b.twist_pass==null?null:(b.twist_pass?1:0), b.frame_pass==null?null:(b.frame_pass?1:0)]));
+  return { doc_no, count: (data.blocks||[]).length };
+}
+export function listStretchReceiveRows() {
+  const docs = all("SELECT * FROM internal_docs WHERE doc_type='stretch_receive' ORDER BY doc_no DESC LIMIT 500");
+  const out = [];
+  docs.forEach(d => {
+    const recv = empFirstName(d.emp_code);
+    all('SELECT * FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).forEach(b => {
+      out.push({ date: d.doc_date, doc_no: d.doc_no, block_no: b.block_no, size_label: b.size_label||'', fabric_no: b.fabric_no||'',
+        tension_value: b.tension_value, twist_pass: b.twist_pass, frame_pass: b.frame_pass,
+        from_dept: d.from_dept, receiver_name: recv, to_dept: d.to_dept });
+    });
+  });
+  return out;
+}
 export function createInternalDoc(type, data) {
   const doc_no = nextDocNo('M', 'internal_docs');
   const ts = now();
