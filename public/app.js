@@ -25,6 +25,7 @@ function renderPage(page, params = {}) {
     clean: pageClean,
     cleanNew: pageCleanNew,
     cleanDetail: pageCleanDetail,
+    pressMenu: pagePressMenu,
     press: pagePress,
     pressNew: pagePressNew,
     pressDetail: pagePressDetail,
@@ -73,7 +74,7 @@ function pageHome(app) {
         <div class="hc-title">ล้าง/โค๊ตบล็อก</div>
         <div class="hc-sub">บันทึกการล้างและโค๊ต</div>
       </div>
-      <div class="home-card" onclick="renderPage('press')">
+      <div class="home-card" onclick="renderPage('pressMenu')">
         <div class="hc-icon">🖼️</div>
         <div class="hc-title">ร้องขออัดบล็อก</div>
         <div class="hc-sub">ร้องขอ / ตรวจรับ / จัดเก็บ</div>
@@ -250,19 +251,58 @@ async function pageCleanDetail(app, {doc_no}) {
 // ══════════════════════════════════════════════════════
 //  MODULE 2 – ร้องขออัดบล็อก
 // ══════════════════════════════════════════════════════
-async function pagePress(app) {
-  const { data: docs } = await api('/api/press');
-  const statusLabel = { pending:'รอดำเนินการ', inspected:'อัดแล้ว', stored:'จัดเก็บแล้ว' };
-  const statusBadge = { pending:'badge-yellow', inspected:'badge-blue', stored:'badge-green' };
+// เมนูย่อยของ "ร้องขออัดบล็อก"
+function pagePressMenu(app) {
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('home')">‹</button>
       <h1>🖼️ ร้องขออัดบล็อก</h1>
-      <button class="btn-primary btn-sm" onclick="renderPage('pressNew')">+ ร้องขอ</button>
+    </div>
+    <div class="home-grid">
+      <div class="home-card" onclick="renderPage('press',{filter:'all'})">
+        <div class="hc-icon">📝</div>
+        <div class="hc-title">ร้องขออัดบล็อก</div>
+        <div class="hc-sub">สร้าง/ดูใบร้องขอ</div>
+      </div>
+      <div class="home-card" onclick="renderPage('press',{filter:'pending'})">
+        <div class="hc-icon">⏳</div>
+        <div class="hc-title">บล็อครออัด</div>
+        <div class="hc-sub">รอดำเนินการอัด</div>
+      </div>
+      <div class="home-card" onclick="renderPage('press',{filter:'inspect'})">
+        <div class="hc-icon">🔍</div>
+        <div class="hc-title">ตรวจรับ</div>
+        <div class="hc-sub">ตรวจรับบล็อกที่อัด</div>
+      </div>
+      <div class="home-card" onclick="renderPage('press',{filter:'store'})">
+        <div class="hc-icon">📦</div>
+        <div class="hc-title">จัดเก็บ</div>
+        <div class="hc-sub">จัดเก็บเข้าคลัง</div>
+      </div>
+    </div>`;
+}
+
+const PRESS_VIEWS = {
+  all:     { title:'ร้องขออัดบล็อก', status:null,        canCreate:true,  empty:'ยังไม่มีรายการ' },
+  pending: { title:'บล็อครออัด',      status:'pending',   canCreate:false, empty:'ไม่มีบล็อกรออัด' },
+  inspect: { title:'ตรวจรับ',          status:'pending',   canCreate:false, empty:'ไม่มีบล็อกรอตรวจรับ' },
+  store:   { title:'จัดเก็บ',          status:'inspected', canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
+};
+async function pagePress(app, { filter = 'all' } = {}) {
+  const view = PRESS_VIEWS[filter] || PRESS_VIEWS.all;
+  const q = view.status ? `/api/press?status=${view.status}` : '/api/press';
+  const { data: docs } = await api(q);
+  const statusLabel = { pending:'รอดำเนินการ', inspected:'อัดแล้ว', stored:'จัดเก็บแล้ว' };
+  const statusBadge = { pending:'badge-yellow', inspected:'badge-blue', stored:'badge-green' };
+  app.innerHTML = `
+    <div class="topnav">
+      <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
+      <h1>${view.title}</h1>
+      ${view.canCreate ? `<button class="btn-primary btn-sm" onclick="renderPage('pressNew')">+ ร้องขอ</button>` : ''}
     </div>
     <div class="page">
       <div class="card">
-        ${docs.length===0?`<p class="no-data">ยังไม่มีรายการ</p>`:docs.map(d=>`
+        ${docs.length===0?`<p class="no-data">${view.empty}</p>`:docs.map(d=>`
           <div class="list-item" onclick="renderPage('pressDetail',{doc_no:'${d.doc_no}'})">
             <div>
               <div class="list-title">${d.doc_no}</div>

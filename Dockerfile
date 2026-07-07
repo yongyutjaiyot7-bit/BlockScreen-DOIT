@@ -18,6 +18,7 @@ ENV NODE_ENV=production \
     DB_PATH=/app/data/blockscreen.db
 
 EXPOSE 3000
-VOLUME ["/app/data"]
 
+# หมายเหตุ: ไม่ใช้ VOLUME เพราะ Railway ไม่รองรับ (ถ้ารันบน Docker/Compose
+# การ persist ข้อมูลจัดการที่ docker-compose ผ่าน named volume แทน)
 CMD ["node", "src/server.js"]
