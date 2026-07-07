@@ -252,6 +252,17 @@ tr.row-red td{background:var(--red-soft);}
 .blk-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent);
   font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;}
 
+/* Inspection table (ตรวจรับ) */
+table.insp{width:100%;border-collapse:collapse;font-size:.82rem;}
+table.insp th{background:#f8fafc;color:var(--muted);font-weight:700;padding:.45rem .5rem;white-space:nowrap;}
+table.insp td{padding:.45rem .5rem;border-top:1px solid var(--border);vertical-align:middle;}
+table.insp td.sub{color:var(--muted);font-size:.76rem;white-space:nowrap;}
+table.insp td.ctr{text-align:center;}
+table.insp input{background:#fefce8;}
+.pfbtn{width:26px;height:26px;border-radius:50%;border:2px solid #94a3b8;background:#fff;cursor:pointer;padding:0;}
+.pfbtn.on-pass{background:#4f46e5;border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.2);}
+.pfbtn.on-fail{background:var(--red);border-color:var(--red);box-shadow:0 0 0 3px rgba(220,38,38,.2);}
+
 /* Folder view (บล็อกรออัด) */
 .folder-tag{display:inline-block;background:var(--green);color:#fff;font-weight:700;
   padding:.55rem 1.1rem;border-radius:10px;margin-bottom:.9rem;box-shadow:var(--shadow-sm);}

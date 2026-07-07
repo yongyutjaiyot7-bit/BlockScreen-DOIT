@@ -283,24 +283,26 @@ function pagePressMenu(app) {
 }
 
 const PRESS_VIEWS = {
-  all:     { title:'ร้องขออัดบล็อก', status:null,        canCreate:true,  empty:'ยังไม่มีรายการ' },
-  pending: { title:'บล็อครออัด',      status:'pending',   canCreate:false, empty:'ไม่มีบล็อกรออัด' },
-  inspect: { title:'ตรวจรับ',          status:'pending',   canCreate:false, empty:'ไม่มีบล็อกรอตรวจรับ' },
-  store:   { title:'จัดเก็บ',          status:'inspected', canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
+  all:     { title:'ร้องขออัดบล็อก', status:null,          canCreate:true,  empty:'ยังไม่มีรายการ' },
+  pending: { title:'บล็อกรออัด',      status:null,          canCreate:false, empty:'ไม่มีบล็อกรออัด' },
+  inspect: { title:'ตรวจรับ',          status:'inspect_done',canCreate:false, empty:'ไม่มีรายการตรวจรับ' },
+  store:   { title:'จัดเก็บ',          status:'inspect_done',canCreate:false, empty:'ไม่มีบล็อกรอจัดเก็บ' },
 };
 function pressFileName(d) {
-  // วัน/เดือน/ปี & หน่วยงาน & เลขที่บล็อกเดิม & เลขที่เอกสาร
-  return `${fmtDatePad(d.date)}&${d.dept}&${d.old_block_no}&${d.doc_no}`;
+  // วัน/เดือน/ปี & หน่วยงาน & เลขบล็อก(ใหม่ถ้ามี) & เลขที่เอกสาร (+&V1 เฉพาะตอนรอ SUMMIT)
+  const blk = d.new_block_no || d.old_block_no;
+  return `${fmtDatePad(d.date)}&${d.dept}&${blk}&${d.doc_no}${d.status==='inspected'?'&V1':''}`;
 }
 async function pagePress(app, { filter = 'all' } = {}) {
   const view = PRESS_VIEWS[filter] || PRESS_VIEWS.all;
   const q = view.status ? `/api/press?status=${view.status}` : '/api/press';
-  const { data: docs } = await api(q);
+  let { data: docs } = await api(q);
   const statusLabel = { pending:'รอดำเนินการ', inspected:'อัดแล้ว', stored:'จัดเก็บแล้ว' };
   const statusBadge = { pending:'badge-yellow', inspected:'badge-blue', stored:'badge-green' };
 
-  // "บล็อกรออัด" — แสดงเป็น Folder (ชื่อไฟล์ = วันที่&หน่วยงาน&บล็อกเดิม&เลขเอกสาร)
+  // "บล็อกรออัด" — Folder รายการคลิกได้ (pending + inspected/รอ SUMMIT) → เข้าหน้าตรวจรับ
   if (filter === 'pending') {
+    docs = docs.filter(d => d.status === 'pending' || d.status === 'inspected');
     app.innerHTML = `
       <div class="topnav">
         <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
@@ -308,15 +310,48 @@ async function pagePress(app, { filter = 'all' } = {}) {
       </div>
       <div class="page">
         <div class="folder-tag">📁 Folder บล็อกรออัด</div>
-        <div class="folder-box">
+        <div class="card">
           ${docs.length===0
-            ? `<p class="no-data">${view.empty}</p>`
+            ? `<p class="no-data">ไม่มีบล็อกรออัด</p>`
             : docs.map(d=>`
-              <div class="folder-row" onclick="renderPage('pressDetail',{doc_no:'${d.doc_no}'})">
-                ${pressFileName(d)}
+              <div class="list-item" onclick="renderPage('pressInspect',{doc_no:'${d.doc_no}'})">
+                <div>
+                  <div class="list-title">${pressFileName(d)}</div>
+                  <div class="list-sub">บล็อกเดิม ${d.old_block_no}${d.new_block_no?' → ใหม่ '+d.new_block_no:''} · ${d.dept}</div>
+                </div>
+                <div class="list-right">
+                  <span class="badge ${d.status==='inspected'?'badge-blue':'badge-yellow'}">${d.status==='inspected'?'รอ SUMMIT':'รอดำเนินการ'}</span>
+                  <div class="chevron">›</div>
+                </div>
               </div>`).join('')}
         </div>
         <div class="folder-done">จบขั้นตอนร้องขออัดบล็อก</div>
+      </div>`;
+    return;
+  }
+
+  // "ตรวจรับ" — Folder ผลหลัง SUMMIT (จบขั้นตอนอัดบล็อก)
+  if (filter === 'inspect') {
+    app.innerHTML = `
+      <div class="topnav">
+        <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
+        <h1>ตรวจรับ</h1>
+      </div>
+      <div class="page">
+        <div class="folder-tag">📁 Folder ตรวจรับ</div>
+        <div class="card">
+          ${docs.length===0
+            ? `<p class="no-data">ไม่มีรายการตรวจรับ</p>`
+            : docs.map(d=>`
+              <div class="list-item" onclick="renderPage('pressDetail',{doc_no:'${d.doc_no}'})">
+                <div>
+                  <div class="list-title">${pressFileName(d)}</div>
+                  <div class="list-sub">บล็อกใหม่ ${d.new_block_no||'-'} · ${d.dept}</div>
+                </div>
+                <div class="list-right"><span class="chevron">›</span></div>
+              </div>`).join('')}
+        </div>
+        <div class="folder-done">จบขั้นตอนอัดบล็อก</div>
       </div>`;
     return;
   }
@@ -459,7 +494,7 @@ function pagePressNew(app) {
 }
 
 async function pagePressDetail(app, {doc_no}) {
-  const { data: d } = await api(`/api/press/${doc_no}`);
+  const { data: d } = await api(`/api/press-doc?doc_no=${encodeURIComponent(doc_no)}`);
   const canInspect = d.status === 'pending' || d.status === 'inspected';
   const canStore = d.status === 'inspected' && !d.storage;
   app.innerHTML = `
@@ -522,106 +557,172 @@ async function pagePressDetail(app, {doc_no}) {
     </div>`;
 }
 
-function pagePressInspect(app, {doc_no}) {
-  const checks = [
-    {key:'dust_pass',label:'ไม่มีฝุ่น (ความสะอาดของแม่พิมพ์)'},
-    {key:'grease_pass',label:'ไม่มีคราบไขมัน'},
-    {key:'old_adhesive_pass',label:'ไม่มีคราบกาวอัดเดิม/หมึกพิมพ์'},
-    {key:'fabric_hole_pass',label:'ผ้าสกรีนไม่ขาด/เป็นรูรั่ว'},
-    {key:'dot_pass',label:'ไม่มีตามดบนแม่พิมพ์'},
-    {key:'film_correct_pass',label:'ความถูกต้องของฟิล์ม TAG (ไม่กลับด้าน)'},
-    {key:'adhesive_block_pass',label:'กาวไม่อุดตันบริเวณภาพ'},
-    {key:'sharpness_pass',label:'ความคมชัดของภาพ'},
-    {key:'register_pass',label:'REGISTER (MARK) ตรงกัน'},
-  ];
+const INSPECT_ROWS = [
+  {key:'tension_pass',   label:'ความตึงของบล็อกสกรีน', std:'14-20 นิวตัน/ซม.', method:'DIAL GAUGE', value:'i_tension', unit:'นิวตัน'},
+  {key:'dust_pass',      label:'ความสะอาด: ไม่มีฝุ่น', std:'ไม่มีฝุ่น', method:'สายตา'},
+  {key:'grease_pass',    label:'ความสะอาด: ไม่มีคราบไขมัน', std:'ไม่มีคราบไขมัน', method:'สายตา'},
+  {key:'old_adhesive_pass', label:'ความสะอาด: ไม่มีคราบกาวอัดเดิม/หมึกพิมพ์', std:'ไม่มีคราบกาว/หมึก', method:'สายตา'},
+  {key:'fabric_hole_pass', label:'สภาพของผ้าสกรีน', std:'ผ้าไม่ขาด/ไม่เป็นรูรั่วมากเกินไป', method:'สายตา'},
+  {key:'dot_pass',       label:'ตามดบนแม่พิมพ์', std:'ไม่มีตามด', method:'สายตา'},
+  {key:'film_correct_pass', label:'ความถูกต้องของฟิล์ม', std:'TAG ถูกต้อง / ไม่กลับด้าน', method:'สายตา'},
+  {key:'_exposure_pass', label:'เวลาในการฉายแสง', std:'TAG หน้าเครื่อง', method:'TAG หน้าเครื่อง', value:'i_exposure', unit:'วินาที'},
+  {key:'adhesive_block_pass', label:'กาวอุดตันบริเวณภาพ', std:'ไม่อุดตัน', method:'สายตา'},
+  {key:'sharpness_pass', label:'ความคมชัดของภาพ', std:'คมชัด', method:'สายตา'},
+  {key:'register_pass',  label:'REGISTER (MARK)', std:'ตรงกัน', method:'ฟิล์มพิมพ์'},
+];
+async function pagePressInspect(app, {doc_no}) {
+  const { data: d } = await api(`/api/press-doc?doc_no=${encodeURIComponent(doc_no)}`);
+  const f = d.films || [];
+  const join = k => f.map(x=>x[k]).filter(v=>v!=null&&v!=='').join(', ') || '-';
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   const state = {};
-  checks.forEach(c => state[c.key] = null);
+  INSPECT_ROWS.forEach(r => state[r.key] = null);
+  window._inspState = state;
+  window._inspSaved = false;
 
   app.innerHTML = `
     <div class="topnav">
-      <button class="back-btn" onclick="renderPage('pressDetail',{doc_no:'${doc_no}'})">‹</button>
-      <h1>บันทึกตรวจรับ</h1>
+      <button class="back-btn" onclick="renderPage('press',{filter:'pending'})">‹</button>
+      <h1>ตรวจรับ</h1>
     </div>
     <div class="page">
+      <datalist id="empList">${empOpts}</datalist>
+      <div class="ptabs">
+        <button class="ptab" onclick="renderPage('press',{filter:'all'})">ร้องขออัดบล็อก</button>
+        <button class="ptab active">บล็อกรออัด</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'inspect'})">ตรวจรับ</button>
+        <button class="ptab" onclick="renderPage('press',{filter:'store'})">จัดเก็บ</button>
+      </div>
+
       <div class="card">
-        <div class="card-title">${doc_no}</div>
-        <div class="grid2">
-          <div class="form-group"><label>บล็อกใหม่</label>
-            <div class="row gap-sm">
-              <input id="i_new_block" class="flex1" placeholder="เลขบล็อกใหม่"/>
-              <button class="scan-btn" onclick="openScan(v=>$('i_new_block').value=v)">📷</button>
-            </div>
-          </div>
-          <div class="form-group"><label>ขนาดเฟรม</label>
-            <select id="i_frame">
-              ${master.block_sizes.map(s=>`<option>${s.label}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label>กำหนดวันที่เสร็จ</label><input type="date" id="i_due_date" value="${todayISO()}"/></div>
-          <div class="form-group"><label>กำหนดเวลาเสร็จ</label><input type="time" id="i_due_time" value="${nowTime()}"/></div>
-          <div class="form-group"><label>ความตึงบล็อก (14-20 N/cm)</label><input type="number" id="i_tension" placeholder="เช่น 17.5" step="0.1"/></div>
-          <div class="form-group"><label>เวลาฉายแสง (วินาที)</label><input type="number" id="i_exposure" placeholder="วินาที" step="0.1"/></div>
+        <div class="card-title">ข้อมูลชุดที่ 1</div>
+        <table class="ftable">
+          <tr><td class="lbl">หน่วยงาน</td><td class="auto">${d.dept||'-'}</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
+          <tr><td class="lbl">วันที่</td><td class="auto">${fmtDate(d.date)}</td></tr>
+          <tr><td class="lbl">เวลา</td><td class="auto">${d.time||'-'} น.</td></tr>
+          <tr><td class="lbl">กำหนดวันที่เสร็จ</td><td class="in"><input type="date" id="i_due_date" value="${todayISO()}"/></td></tr>
+          <tr><td class="lbl">กำหนดเวลาเสร็จ</td><td class="in"><input type="time" id="i_due_time" value="${nowTime()}"/></td></tr>
+          <tr><td class="lbl">เลขที่บล็อกใหม่</td><td class="in">
+            <div class="row gap-sm"><input id="i_new_block" class="flex1" placeholder="สแกน / พิมพ์" oninput="lookupNewFrame(this.value)"/><button class="scan-btn" onclick="openScan(v=>{$('i_new_block').value=v;lookupNewFrame(v);})">📷</button></div></td></tr>
+          <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="i_framesize">-</td></tr>
+          <tr><td class="lbl">รหัสภายใน</td><td class="auto">${join('internal_code')}</td></tr>
+          <tr><td class="lbl">ลำดับสี</td><td class="auto">${join('color_order')}</td></tr>
+          <tr><td class="lbl">Revision</td><td class="auto">${join('revision')}</td></tr>
+          <tr><td class="lbl">เบอร์ผ้า</td><td class="auto">${join('fabric_no')}</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">ข้อมูลชุดที่ 2 — ผลการตรวจรับ</div>
+        <div class="table-scroll">
+          <table class="insp">
+            <thead><tr><th>สิ่งที่ต้องควบคุม</th><th>เกณฑ์</th><th>วิธี</th><th>ค่าที่วัดได้</th><th>ผ่าน</th><th>ไม่ผ่าน</th></tr></thead>
+            <tbody>
+              ${INSPECT_ROWS.map(r=>`<tr>
+                <td>${r.label}</td>
+                <td class="sub">${r.std}</td>
+                <td class="sub">${r.method}</td>
+                <td>${r.value?`<input id="${r.value}" type="number" step="0.1" placeholder="${r.unit}" style="width:80px"/>`:'-'}</td>
+                <td class="ctr"><button class="pfbtn" id="pf_pass_${r.key}" onclick="setCheck('${r.key}',1)"></button></td>
+                <td class="ctr"><button class="pfbtn" id="pf_fail_${r.key}" onclick="setCheck('${r.key}',0)"></button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
+
       <div class="card">
-        <div class="card-title">ผลการตรวจสอบ</div>
-        ${checks.map(c=>`
-          <div class="check-item">
-            <label>${c.label}</label>
-            <div class="check-group">
-              <button id="btn_pass_${c.key}" onclick="setCheck('${c.key}',1)" class="btn-sm btn-secondary">ผ่าน</button>
-              <button id="btn_fail_${c.key}" onclick="setCheck('${c.key}',0)" class="btn-sm btn-secondary">ไม่ผ่าน</button>
-            </div>
-          </div>`).join('')}
+        <div class="card-title">ผู้ปฏิบัติ</div>
+        <table class="ftable">
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1</td><td class="in">
+            <div class="row gap-sm"><input id="i_emp1" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="onEmp1(this)"/><button class="scan-btn" onclick="openScan(v=>{$('i_emp1').value=v;onEmp1($('i_emp1'));})">📷</button></div>
+            <div id="i_emp1_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 2</td><td class="in">
+            <div class="row gap-sm"><input id="i_emp2" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'i_emp2_n')"/><button class="scan-btn" onclick="openScan(v=>{$('i_emp2').value=v;lookupEmp($('i_emp2'),'i_emp2_n')})">📷</button></div>
+            <div id="i_emp2_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">วันที่ปฏิบัติ</td><td class="auto" id="i_op_date">-</td></tr>
+          <tr><td class="lbl">เวลาปฏิบัติ</td><td class="auto" id="i_op_time">-</td></tr>
+        </table>
       </div>
-      <div class="card">
-        <div class="grid2">
-          <div class="form-group"><label>วันที่ตรวจ</label><input type="date" id="i_date" value="${todayISO()}"/></div>
-          <div class="form-group"><label>เวลา</label><input type="time" id="i_time" value="${nowTime()}"/></div>
-          <div class="form-group"><label>รหัสพนักงาน BL คนที่ 1</label>
-            <div class="row gap-sm">
-              <input id="i_emp1" class="flex1" oninput="lookupEmp(this,'i_emp1_n')"/>
-              <button class="scan-btn" onclick="openScan(v=>{$('i_emp1').value=v;lookupEmp($('i_emp1'),'i_emp1_n')})">📷</button>
-            </div><small id="i_emp1_n" class="muted"></small>
-          </div>
-          <div class="form-group"><label>รหัสพนักงาน BL คนที่ 2</label>
-            <div class="row gap-sm">
-              <input id="i_emp2" class="flex1" oninput="lookupEmp(this,'i_emp2_n')"/>
-              <button class="scan-btn" onclick="openScan(v=>{$('i_emp2').value=v;lookupEmp($('i_emp2'),'i_emp2_n')})">📷</button>
-            </div><small id="i_emp2_n" class="muted"></small>
-          </div>
-        </div>
+
+      <div class="row gap-sm">
+        <button class="btn-success flex1" style="padding:.9rem;font-size:1rem" onclick="saveInspect('${doc_no}')">SAVE</button>
+        <button class="flex1" id="btn_summit" disabled style="padding:.9rem;font-size:1rem;background:#cbd5e1;color:#64748b;cursor:not-allowed" onclick="summitInspect('${doc_no}')">SUMMIT</button>
       </div>
-      <button class="btn-primary" style="width:100%" onclick="submitInspect('${doc_no}')">SAVE / SUBMIT</button>
+      <p class="scan-hint" style="text-align:center;margin-top:.5rem">กด SAVE ได้ตลอด (เพิ่มข้อมูลได้เรื่อยๆ) · SUMMIT เปิดเป็นสีเขียวหลังกด SAVE · กด SUMMIT ต้องระบุพนักงานทั้ง 2 คน แล้วจึงจบขั้นตอน</p>
     </div>`;
 
-  window._inspState = state;
+  window.lookupNewFrame = async (bno) => {
+    bno = (bno||'').trim(); const el = $('i_framesize');
+    if (!bno) { el.textContent='-'; return; }
+    try { const { data } = await api('/api/block/'+encodeURIComponent(bno)); el.textContent = data.size_label||'-'; }
+    catch { el.textContent='ไม่พบบล็อก (จะเพิ่มใหม่)'; }
+  };
+  window.onEmp1 = (inp) => {
+    lookupEmp(inp, 'i_emp1_n');
+    // วันที่/เวลาปฏิบัติ = ตามเวลาที่กรอกรหัสพนักงาน BL คนที่ 1
+    if (inp.value.trim()) { $('i_op_date').textContent = todayStr(); $('i_op_time').textContent = nowTime()+' น.'; }
+    else { $('i_op_date').textContent = '-'; $('i_op_time').textContent = '-'; }
+  };
   window.setCheck = (key, val) => {
     window._inspState[key] = val;
-    $(`btn_pass_${key}`).className = 'btn-sm ' + (val===1?'sel-pass':'btn-secondary');
-    $(`btn_fail_${key}`).className = 'btn-sm ' + (val===0?'sel-fail':'btn-secondary');
+    $(`pf_pass_${key}`).className = 'pfbtn' + (val===1?' on-pass':'');
+    $(`pf_fail_${key}`).className = 'pfbtn' + (val===0?' on-fail':'');
   };
 
-  window.submitInspect = async (doc_no) => {
-    const tension_value = parseFloat($('i_tension').value)||null;
-    const tension_pass = tension_value !== null ? (tension_value >= 14 && tension_value <= 20 ? 1 : 0) : 0;
-    const body = {
+  function collectBody() {
+    const st = window._inspState;
+    return {
       new_block_no: $('i_new_block').value.trim()||null,
-      frame_size: $('i_frame').value,
+      frame_size: $('i_framesize').textContent !== '-' ? $('i_framesize').textContent : null,
       due_date: $('i_due_date').value,
       due_time: $('i_due_time').value,
-      tension_value, tension_pass,
+      tension_value: parseFloat($('i_tension').value)||null,
+      tension_pass: st.tension_pass?1:0,
+      dust_pass: st.dust_pass?1:0, grease_pass: st.grease_pass?1:0, old_adhesive_pass: st.old_adhesive_pass?1:0,
+      fabric_hole_pass: st.fabric_hole_pass?1:0, dot_pass: st.dot_pass?1:0, film_correct_pass: st.film_correct_pass?1:0,
       exposure_seconds: parseFloat($('i_exposure').value)||null,
-      emp1_code: $('i_emp1').value.trim()||null,
-      emp2_code: $('i_emp2').value.trim()||null,
-      insp_date: $('i_date').value,
-      insp_time: $('i_time').value,
-      ...window._inspState,
+      adhesive_block_pass: st.adhesive_block_pass?1:0, sharpness_pass: st.sharpness_pass?1:0, register_pass: st.register_pass?1:0,
+      emp1_code: $('i_emp1').value.trim()||null, emp2_code: $('i_emp2').value.trim()||null,
+      insp_date: todayISO(), insp_time: nowTime(),
     };
-    await api(`/api/press/${doc_no}/inspect`,'POST',body);
-    toast('บันทึกตรวจรับสำเร็จ');
-    renderPage('pressDetail',{doc_no});
+  }
+  function enableSummit() {
+    const s = $('btn_summit');
+    s.disabled = false; s.style.cssText = 'padding:.9rem;font-size:1rem'; s.className = 'flex1 btn-success';
+  }
+
+  window.saveInspect = async (docNo) => {
+    if (!$('i_new_block').value.trim()) { toast('กรุณาระบุเลขที่บล็อกใหม่','red'); return; }
+    await api(`/api/press-inspect?doc_no=${encodeURIComponent(docNo)}`,'POST',collectBody());
+    toast('บันทึกแล้ว (SAVE) — กลับสู่ Folder บล็อกรออัด');
+    renderPage('press',{filter:'pending'});
   };
+  window.summitInspect = async (docNo) => {
+    const e1 = $('i_emp1').value.trim(), e2 = $('i_emp2').value.trim();
+    if (!e1 || !e2) { toast('ต้องระบุ/สแกนพนักงาน BL ทั้ง 2 คน ก่อนกด SUMMIT','red'); return; }
+    // บันทึกครั้งสุดท้าย (พร้อมชื่อผู้ปฏิบัติ + วันเวลาที่กด SUMMIT) แล้วจบขั้นตอน
+    await api(`/api/press-inspect?doc_no=${encodeURIComponent(docNo)}`,'POST',collectBody());
+    await api(`/api/press-summit?doc_no=${encodeURIComponent(docNo)}`,'POST',{});
+    toast('จบขั้นตอนอัดบล็อก — ย้ายไป Folder ตรวจรับ');
+    renderPage('press',{filter:'inspect'});
+  };
+
+  // ถ้าตรวจรับแล้ว (SAVE มาก่อน) → เติมค่าเดิม + เปิด SUMMIT ให้เลย
+  if (d.status === 'inspected' && d.inspections && d.inspections.length) {
+    const last = d.inspections[d.inspections.length-1];
+    $('i_new_block').value = last.new_block_no || '';
+    if (last.new_block_no) window.lookupNewFrame(last.new_block_no);
+    if (last.due_date) $('i_due_date').value = last.due_date;
+    if (last.due_time) $('i_due_time').value = last.due_time;
+    if (last.tension_value!=null) $('i_tension').value = last.tension_value;
+    if (last.exposure_seconds!=null) $('i_exposure').value = last.exposure_seconds;
+    INSPECT_ROWS.forEach(r => { const v = last[r.key]; if (v===1||v===0) window.setCheck(r.key, v); });
+    if (last.emp1_code) { $('i_emp1').value = last.emp1_code; window.onEmp1($('i_emp1')); }
+    if (last.emp2_code) { $('i_emp2').value = last.emp2_code; lookupEmp($('i_emp2'),'i_emp2_n'); }
+    enableSummit();
+  }
 }
 
 function pagePressStore(app, {doc_no}) {
@@ -665,7 +766,7 @@ function pagePressStore(app, {doc_no}) {
       store_time: $('s_time').value,
       storer_emp: $('s_emp').value.trim()||null,
     };
-    await api(`/api/press/${doc_no}/store`,'POST',body);
+    await api(`/api/press-store?doc_no=${encodeURIComponent(doc_no)}`,'POST',body);
     toast('จัดเก็บสำเร็จ');
     renderPage('pressDetail',{doc_no});
   };

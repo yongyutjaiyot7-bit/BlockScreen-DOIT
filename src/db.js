@@ -326,6 +326,11 @@ export function saveInspection(doc_no, data) {
   if (data.new_block_no) run('UPDATE press_requests SET new_block_no=?,status=? WHERE doc_no=?', [data.new_block_no,'inspected',doc_no]);
   return get('SELECT * FROM press_inspections WHERE doc_no=? AND version=?', [doc_no, version]);
 }
+export function summitPressInspect(doc_no) {
+  // จบขั้นตอนตรวจรับ → ออกจากโฟลเดอร์ "บล็อกรออัด" ไปรอจัดเก็บ
+  run("UPDATE press_requests SET status='inspect_done' WHERE doc_no=?", [doc_no]);
+  return get('SELECT * FROM press_requests WHERE doc_no=?', [doc_no]);
+}
 export function saveBlockStorage(doc_no, data) {
   const ts = now();
   run('INSERT OR REPLACE INTO block_storage(id,doc_no,new_block_no,storage_location,storer_emp,store_date,store_time,remarks,created_at) VALUES(?,?,?,?,?,?,?,?,?)',

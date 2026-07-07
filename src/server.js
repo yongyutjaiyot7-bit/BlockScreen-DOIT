@@ -8,6 +8,7 @@ import {
   getEmployee, getBlock, getMasterData, addBlock, listBlocks,
   createCleanDoc, listCleanDocs, getCleanDoc,
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage,
+  summitPressInspect,
   createInternalDoc, getInternalDoc, listInternalDocs, submitInternalDoc,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
@@ -67,16 +68,18 @@ app.post('/api/clean', wrap((req, res) => ok(res, createCleanDoc(req.body || {})
 
 // ---------- MODULE 2: PRESS REQUEST ----------
 app.get('/api/press', wrap((req, res) => ok(res, listPressRequests(req.query.status))));
-app.get('/api/press/:doc_no', wrap((req, res) => {
-  const d = getPressRequest(req.params.doc_no);
+app.post('/api/press', wrap((req, res) => ok(res, createPressRequest(req.body || {}))));
+// doc_no มี "/" อยู่ในเลขเอกสาร (เช่น R000001/2026) จึงส่งผ่าน query param แทน path param
+app.get('/api/press-doc', wrap((req, res) => {
+  const d = getPressRequest(req.query.doc_no);
   if (!d) return err(res, 'ไม่พบเอกสาร', 404);
   ok(res, d);
 }));
-app.post('/api/press', wrap((req, res) => ok(res, createPressRequest(req.body || {}))));
-app.post('/api/press/:doc_no/inspect', wrap((req, res) => ok(res, saveInspection(req.params.doc_no, req.body || {}))));
-app.post('/api/press/:doc_no/store', wrap((req, res) => {
-  saveBlockStorage(req.params.doc_no, req.body || {});
-  ok(res, getPressRequest(req.params.doc_no));
+app.post('/api/press-inspect', wrap((req, res) => ok(res, saveInspection(req.query.doc_no, req.body || {}))));
+app.post('/api/press-summit', wrap((req, res) => ok(res, summitPressInspect(req.query.doc_no))));
+app.post('/api/press-store', wrap((req, res) => {
+  saveBlockStorage(req.query.doc_no, req.body || {});
+  ok(res, getPressRequest(req.query.doc_no));
 }));
 
 // ---------- MODULE 3: INTERNAL TRANSFER ----------
