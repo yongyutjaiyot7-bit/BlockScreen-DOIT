@@ -14,6 +14,7 @@ import {
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
   bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock, updateBlock,
+  listMaster, masterUpsert, masterDelete,
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +59,11 @@ app.get('/api/qr/:text', async (req, res) => {
     res.type('png').send(png);
   } catch (e) { err(res, e.message); }
 });
+
+// ---------- MASTER DATA CRUD ----------
+app.get('/api/master/:table', wrap((req, res) => ok(res, listMaster(req.params.table))));
+app.post('/api/master/:table', wrap((req, res) => ok(res, masterUpsert(req.params.table, req.body || {}))));
+app.delete('/api/master/:table/:id', wrap((req, res) => ok(res, masterDelete(req.params.table, req.params.id))));
 
 // ---------- MODULE 1: CLEAN / COAT ----------
 app.get('/api/clean', wrap((req, res) => ok(res, listCleanDocs())));

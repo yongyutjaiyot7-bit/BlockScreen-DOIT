@@ -287,6 +287,40 @@ export function getMasterData() {
   };
 }
 
+/// ── Master-data CRUD (generic, whitelisted) ──
+const MASTER_DEFS = {
+  employees:     { pk:'emp_code', cols:['emp_code','prefix','firstname','lastname','dept_id'], autopk:false, order:'dept_id, emp_code' },
+  departments:   { pk:'id',       cols:['id','name'],            autopk:false, order:'id' },
+  process_steps: { pk:'id',       cols:['name','step_order'],    autopk:true,  order:'step_order' },
+  block_sizes:   { pk:'id',       cols:['label'],                autopk:true,  order:'id' },
+  fabric_types:  { pk:'id',       cols:['id'],                   autopk:false, order:'id' },
+};
+export function listMaster(table) {
+  const def = MASTER_DEFS[table]; if (!def) throw new Error('ตารางไม่ถูกต้อง');
+  return all(`SELECT * FROM ${table} ORDER BY ${def.order}`);
+}
+export function masterUpsert(table, data) {
+  const def = MASTER_DEFS[table]; if (!def) throw new Error('ตารางไม่ถูกต้อง');
+  const val = c => (data[c] === undefined || data[c] === '' ? null : data[c]);
+  if (def.autopk) {
+    const id = data[def.pk];
+    if (id) {
+      run(`UPDATE ${table} SET ${def.cols.map(c=>`${c}=?`).join(',')} WHERE ${def.pk}=?`, [...def.cols.map(val), id]);
+    } else {
+      run(`INSERT INTO ${table}(${def.cols.join(',')}) VALUES(${def.cols.map(()=>'?').join(',')})`, def.cols.map(val));
+    }
+  } else {
+    if (!val(def.pk)) throw new Error('กรุณาระบุรหัส/ชื่อ');
+    run(`INSERT OR REPLACE INTO ${table}(${def.cols.join(',')}) VALUES(${def.cols.map(()=>'?').join(',')})`, def.cols.map(val));
+  }
+  return listMaster(table);
+}
+export function masterDelete(table, id) {
+  const def = MASTER_DEFS[table]; if (!def) throw new Error('ตารางไม่ถูกต้อง');
+  run(`DELETE FROM ${table} WHERE ${def.pk}=?`, [id]);
+  return listMaster(table);
+}
+
 // ── MODULE 1: Clean (DATA BASE 1 — one document row per block) ──
 function empFirstName(code) {
   if (!code) return '';

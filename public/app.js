@@ -48,6 +48,7 @@ function renderPage(page, params = {}) {
     externalStretchReceiveResult: pageExternalStretchReceiveResult,
     search: pageSearch,
     blocks: pageBlocks,
+    masterData: pageMasterData,
   };
   (pages[page] || pageHome)(app, params);
   updateBottomNav(page);
@@ -180,8 +181,7 @@ async function pageClean(app) {
       row['หมายเหตุ'] = r.remarks||'';
       return row;
     });
-    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'DB1');XLSX.writeFile(wb,'DataBase1_ล้างโค๊ตบล็อก.xlsx');
+    styledXlsx(data,'DB1','DataBase1_ล้างโค๊ตบล็อก.xlsx');
   };
 }
 
@@ -933,7 +933,7 @@ async function pagePressDB3(app) {
     </div></div>`;
   window.exportDB3=()=>{
     const data=rows.map(r=>({'วันที่':fmtDate(r.store_date||r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.new_block_no,'รหัสภายใน':r.internal_codes,'จากหน่วยงาน':'บล็อก','ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'ถึงหน่วยงาน':r.store_to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.store_remarks}));
-    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'DB3');XLSX.writeFile(wb,'DataBase3.xlsx');
+    styledXlsx(data,'DB3','DataBase3.xlsx');
   };
 }
 
@@ -997,8 +997,7 @@ async function pageInternalDatabase(app) {
       'หน่วยงาน(ผู้ส่ง)':r.from_dept,'ผู้ส่ง':r.sender,'Revision':r.revision,'สี':r.color_order,
       'ผู้รับ':r.receiver,'หน่วยงาน(ผู้รับ)':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remark,
     }));
-    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'IssueSlip');XLSX.writeFile(wb,'ใบเบิกจ่ายบล็อก.xlsx');
+    styledXlsx(data,'IssueSlip','ใบเบิกจ่ายบล็อก.xlsx');
   };
 }
 
@@ -1377,7 +1376,7 @@ async function pageExternalStretchSendResult(app, {doc_no}) {
   window._db3rows = rows;
   window.exportRows = (docNo, kind) => {
     const data = window._db3rows.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'รหัสภายใน':r.internal_codes,'หน่วยงาน':r.from_dept,'ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'หน่วยงานถึง':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remarks}));
-    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'DB3');XLSX.writeFile(wb,'DataBase3_'+docNo.replace(/\//g,'-')+'.xlsx');
+    styledXlsx(data,'DB3','DataBase3_'+docNo.replace(/\//g,'-')+'.xlsx');
   };
 }
 
@@ -1496,10 +1495,10 @@ async function pageExternalStretchReceiveResult(app, {doc_no}) {
   window.exportDB = (kind) => {
     if (kind==='db3') {
       const data = rows3.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'รหัสภายใน':r.internal_codes,'หน่วยงาน':r.from_dept,'ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'หน่วยงานถึง':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remarks}));
-      const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'DB3');XLSX.writeFile(wb,'DataBase3_'+doc_no.replace(/\//g,'-')+'.xlsx');
+      styledXlsx(data,'DB3','DataBase3_'+doc_no.replace(/\//g,'-')+'.xlsx');
     } else {
       const data = rows4.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'ขนาดเฟรม':r.size_label,'เบอร์ผ้า':r.fabric_no,'ความตึง':r.tension_value,'บล็อกบิดงอ':passLbl(r.twist_pass),'ขนาดเฟรม(ตรวจ)':passLbl(r.frame_pass)}));
-      const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'DB4');XLSX.writeFile(wb,'DataBase4_'+doc_no.replace(/\//g,'-')+'.xlsx');
+      styledXlsx(data,'DB4','DataBase4_'+doc_no.replace(/\//g,'-')+'.xlsx');
     }
   };
 }
@@ -1725,13 +1724,128 @@ function pageSearch(app) {
 }
 
 // ══════════════════════════════════════════════════════
+//  MASTER DATA MANAGEMENT (add / edit / delete)
+// ══════════════════════════════════════════════════════
+const MASTER_TABS = {
+  emp_related: { table:'employees', label:'👥 พนักงานที่เกี่ยวข้อง', pk:'emp_code',
+    filter:e=>e.dept_id!=='BL',
+    fields:[{k:'emp_code',l:'รหัสพนักงาน',pk:true},{k:'prefix',l:'คำนำหน้า'},{k:'firstname',l:'ชื่อ'},{k:'lastname',l:'สกุล'},{k:'dept_id',l:'หน่วยงาน',type:'dept'}] },
+  emp_bl: { table:'employees', label:'🏭 พนักงานหน่วยงานบล็อก', pk:'emp_code',
+    filter:e=>e.dept_id==='BL', fixed:{dept_id:'BL'},
+    fields:[{k:'emp_code',l:'รหัสพนักงาน',pk:true},{k:'prefix',l:'คำนำหน้า'},{k:'firstname',l:'ชื่อ'},{k:'lastname',l:'สกุล'}] },
+  steps: { table:'process_steps', label:'🔧 ขั้นตอนการทำงาน', pk:'id', autopk:true,
+    fields:[{k:'name',l:'ชื่อขั้นตอน'},{k:'step_order',l:'ลำดับ',type:'number'}] },
+  sizes: { table:'block_sizes', label:'📐 ขนาดบล็อก', pk:'id', autopk:true,
+    fields:[{k:'label',l:'ขนาดบล็อก'}] },
+  fabric: { table:'fabric_types', label:'🧵 เบอร์ผ้า', pk:'id',
+    fields:[{k:'id',l:'เบอร์ผ้า',pk:true}] },
+};
+let _mdTab = 'emp_related';
+
+async function pageMasterData(app) {
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('blocks')">‹</button><h1>⚙️ จัดการข้อมูลหลัก</h1></div>
+    <div class="page">
+      <div class="ptabs">
+        ${Object.entries(MASTER_TABS).map(([k,t])=>`<button class="ptab ${k===_mdTab?'active':''}" onclick="mdSwitch('${k}')">${t.label}</button>`).join('')}
+        <button class="ptab" onclick="renderPage('blocks')">📋 ทะเบียนบล็อก</button>
+      </div>
+      <div id="md_body"></div>
+    </div>`;
+  window.mdSwitch = (k) => { _mdTab = k; renderPage('masterData'); };
+  await renderMdBody();
+
+  async function renderMdBody() {
+    const cfg = MASTER_TABS[_mdTab];
+    const { data: all } = await api('/api/master/'+cfg.table);
+    const rows = cfg.filter ? all.filter(cfg.filter) : all;
+    const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
+    const inputFor = (f, val='') => f.type==='dept'
+      ? `<select id="md_${f.k}">${master.departments.map(d=>`<option value="${d.id}" ${d.id===val?'selected':''}>${d.id}</option>`).join('')}</select>`
+      : `<input id="md_${f.k}" type="${f.type==='number'?'number':'text'}" value="${val==null?'':val}" placeholder="${f.l}"/>`;
+    $('md_body').innerHTML = `
+      <div class="card">
+        <div class="card-title">➕ เพิ่มรายการใหม่</div>
+        <div class="md-form">
+          ${cfg.fields.map(f=>`<div class="md-field"><label>${f.l}</label>${inputFor(f)}</div>`).join('')}
+          <button class="btn-primary" style="align-self:end" onclick="mdAdd()">เพิ่ม</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">${cfg.label} (${rows.length})</div>
+        <div class="table-scroll"><table>
+          <thead><tr>${cfg.fields.map(f=>`<th>${f.l}</th>`).join('')}<th></th></tr></thead>
+          <tbody>${rows.length?rows.map(r=>`<tr>
+            ${cfg.fields.map(f=>`<td>${r[f.k]==null?'-':r[f.k]}</td>`).join('')}
+            <td><div class="row gap-sm" style="justify-content:flex-end">
+              <button class="btn-sm btn-secondary" onclick='mdEdit(${JSON.stringify(r).replace(/'/g,"&#39;")})'>แก้ไข</button>
+              <button class="btn-sm btn-danger" onclick="mdDel('${r[cfg.pk]}')">ลบ</button>
+            </div></td></tr>`).join(''):`<tr><td colspan="${cfg.fields.length+1}" class="no-data">ยังไม่มีข้อมูล</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+  }
+
+  function collect(prefix='md_') {
+    const cfg = MASTER_TABS[_mdTab];
+    const body = { ...(cfg.fixed||{}) };
+    cfg.fields.forEach(f=>{ const el=$(prefix+f.k); if(el) body[f.k]=el.value.trim?el.value.trim():el.value; });
+    return body;
+  }
+  window.mdAdd = async () => {
+    const cfg = MASTER_TABS[_mdTab];
+    const body = collect();
+    const pkField = cfg.fields.find(f=>f.pk);
+    if (pkField && !body[pkField.k]) { toast('กรุณากรอก '+pkField.l,'red'); return; }
+    if (!pkField) { const first=cfg.fields[0]; if(!body[first.k]){ toast('กรุณากรอก '+first.l,'red'); return; } }
+    await api('/api/master/'+cfg.table,'POST',body);
+    if (cfg.table==='employees') { const m=await api('/api/master'); master=m.data; }
+    toast('เพิ่มข้อมูลแล้ว');
+    await renderMdBody();
+  };
+  window.mdEdit = (r) => {
+    const cfg = MASTER_TABS[_mdTab];
+    const deptSel = (val)=>`<select id="mde_dept_id">${master.departments.map(d=>`<option value="${d.id}" ${d.id===val?'selected':''}>${d.id}</option>`).join('')}</select>`;
+    closeMdEdit();
+    const ov = document.createElement('div'); ov.id='mdEditModal'; ov.className='modal';
+    ov.innerHTML = `<div class="modal-box">
+      <div class="modal-header"><span>✏️ แก้ไขรายการ</span><button onclick="closeMdEdit()">✕</button></div>
+      ${cfg.fields.map(f=>`<div class="form-group"><label>${f.l}</label>${
+        f.type==='dept' ? deptSel(r[f.k])
+        : `<input id="mde_${f.k}" type="${f.type==='number'?'number':'text'}" value="${r[f.k]==null?'':r[f.k]}" ${f.pk?'readonly style=background:#eef1f8':''}/>`
+      }</div>`).join('')}
+      ${cfg.autopk?`<input type="hidden" id="mde_${cfg.pk}" value="${r[cfg.pk]}"/>`:''}
+      <button class="btn-primary" style="width:100%;padding:.8rem" onclick="mdSaveEdit()">บันทึก</button></div>`;
+    ov.onclick = e=>{ if(e.target===ov) closeMdEdit(); };
+    document.body.appendChild(ov);
+  };
+  window.closeMdEdit = () => { const m=document.getElementById('mdEditModal'); if(m) m.remove(); };
+  window.mdSaveEdit = async () => {
+    const cfg = MASTER_TABS[_mdTab];
+    const body = { ...(cfg.fixed||{}) };
+    cfg.fields.forEach(f=>{ const el=$('mde_'+f.k); if(el) body[f.k]=el.value.trim?el.value.trim():el.value; });
+    if (cfg.autopk) body[cfg.pk] = $('mde_'+cfg.pk).value;
+    await api('/api/master/'+cfg.table,'POST',body);
+    if (cfg.table==='employees') { const m=await api('/api/master'); master=m.data; }
+    closeMdEdit(); toast('บันทึกแล้ว'); await renderMdBody();
+  };
+  window.mdDel = async (id) => {
+    const cfg = MASTER_TABS[_mdTab];
+    if (!confirm('ลบรายการนี้?')) return;
+    await api('/api/master/'+cfg.table+'/'+encodeURIComponent(id),'DELETE');
+    if (cfg.table==='employees') { const m=await api('/api/master'); master=m.data; }
+    toast('ลบแล้ว'); await renderMdBody();
+  };
+}
+
+// ══════════════════════════════════════════════════════
 //  BLOCK REGISTRY
 // ══════════════════════════════════════════════════════
 async function pageBlocks(app) {
   const { data: blocks } = await api('/api/blocks');
   const statusBadge = { available:'badge-green', external:'badge-yellow', cleaning:'badge-blue', stored:'badge-gray' };
   app.innerHTML = `
-    <div class="topnav"><h1>📋 ทะเบียนบล็อก</h1></div>
+    <div class="topnav"><h1 class="flex1">📋 ทะเบียนบล็อก</h1><button class="btn-primary btn-sm" onclick="renderPage('masterData')">⚙️ จัดการข้อมูลหลัก</button></div>
     <div class="page">
       <div class="card">
         <div class="card-title">📥 นำเข้าข้อมูลจาก Excel (พนักงานอัปโหลดไฟล์ที่กรอกไว้)</div>
@@ -1899,8 +2013,7 @@ async function downloadTemplate() {
   const data = type==='blocks'
     ? [{ 'เลขที่ Block':'9999', 'Size Block':'610 mm. x 960 mm.', 'เบอร์ผ้า':'SX225B22' }]
     : [{ 'รหัสพนักงาน':'999999', 'คำนำหน้า':'นาย', 'ชื่อ':'ตัวอย่าง', 'สกุล':'นามสกุล', 'หน่วยงาน':'BL' }];
-  const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, type); XLSX.writeFile(wb, 'template_'+type+'.xlsx');
+  styledXlsx(data, type, 'template_'+type+'.xlsx');
 }
 async function exportData() {
   const type = $('imp_type').value;
@@ -1913,8 +2026,7 @@ async function exportData() {
     data = master.employees.map(e => ({ 'รหัสพนักงาน':e.emp_code, 'คำนำหน้า':e.prefix, 'ชื่อ':e.firstname, 'สกุล':e.lastname, 'หน่วยงาน':e.dept_id }));
     name = 'employees.xlsx';
   }
-  const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, type); XLSX.writeFile(wb, name);
+  styledXlsx(data, type, name);
 }
 window.downloadTemplate = downloadTemplate;
 window.exportData = exportData;
@@ -2083,6 +2195,39 @@ function todayStr() {
   return new Date().toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'});
 }
 function nowTime() { return new Date().toTimeString().slice(0,5); }
+
+// ── Excel export แบบมีสไตล์ (หัวตาราง, จัดกึ่งกลาง, ลายน้ำบริษัท) ──
+function styledXlsx(rows, sheetName, fileName) {
+  if (!rows || !rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
+  const headers = Object.keys(rows[0]);
+  const n = headers.length;
+  const WATERMARK = 'บริษัท ดูอิท จำกัด';
+  const aoa = [
+    [WATERMARK, ...Array(Math.max(0,n-1)).fill('')],
+    headers,
+    ...rows.map(r => headers.map(h => (r[h] == null ? '' : r[h]))),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:n-1} }];
+  ws['!cols'] = headers.map(() => ({ wch: 12 }));                 // ความกว้างคอลัมน์ 12
+  ws['!rows'] = aoa.map((_,i) => ({ hpt: i === 0 ? 38 : 30 }));   // ความสูงแถว 30 (หัวลายน้ำ 38)
+  const center = { vertical:'center', horizontal:'center', wrapText:true };
+  const thin = { style:'thin', color:{ rgb:'D9DCE6' } };
+  const border = { top:thin, bottom:thin, left:thin, right:thin };
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r:R, c:C });
+      const cell = ws[addr] || (ws[addr] = { t:'s', v:'' });
+      if (R === 0)      cell.s = { font:{ bold:true, sz:18, italic:true, color:{ rgb:'C7CBDA' } }, alignment:center };
+      else if (R === 1) cell.s = { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ fgColor:{ rgb:'4F46E5' } }, alignment:center, border };
+      else              cell.s = { font:{ sz:10, color:{ rgb:'1F2937' } }, alignment:center, border };
+    }
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, fileName);
+}
 
 function toast(msg, type = 'ok') {
   const el = document.getElementById('toast');

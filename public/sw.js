@@ -1,4 +1,4 @@
-const CACHE = 'blockscreen-v3';
+const CACHE = 'blockscreen-v4';
 const STATIC = ['/', '/style.css', '/app.js', '/xlsx.mini.js', '/jsQR.js', '/manifest.json'];
 
 self.addEventListener('install', e => {
