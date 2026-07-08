@@ -1772,10 +1772,14 @@ async function pageMasterData(app) {
         </div>
       </div>
       <div class="card">
-        <div class="card-title">${cfg.label} (${rows.length})</div>
+        <div class="card-title">${cfg.label} (<span id="md_count">${rows.length}</span>)</div>
+        <div class="row gap-sm mb">
+          <input id="md_search" class="flex1" placeholder="🔍 ค้นหา..." oninput="mdFilter(this.value)"/>
+          <button class="btn-secondary btn-sm" onclick="$('md_search').value='';mdFilter('')">ล้าง</button>
+        </div>
         <div class="table-scroll"><table>
           <thead><tr>${cfg.fields.map(f=>`<th>${f.l}</th>`).join('')}<th></th></tr></thead>
-          <tbody>${rows.length?rows.map(r=>`<tr>
+          <tbody id="md_tbody">${rows.length?rows.map(r=>`<tr data-s="${cfg.fields.map(f=>r[f.k]==null?'':r[f.k]).join(' ').toLowerCase().replace(/"/g,'&quot;')}">
             ${cfg.fields.map(f=>`<td>${r[f.k]==null?'-':r[f.k]}</td>`).join('')}
             <td><div class="row gap-sm" style="justify-content:flex-end">
               <button class="btn-sm btn-secondary" onclick='mdEdit(${JSON.stringify(r).replace(/'/g,"&#39;")})'>แก้ไข</button>
@@ -1792,6 +1796,16 @@ async function pageMasterData(app) {
     cfg.fields.forEach(f=>{ const el=$(prefix+f.k); if(el) body[f.k]=el.value.trim?el.value.trim():el.value; });
     return body;
   }
+  window.mdFilter = (q) => {
+    q = (q||'').trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#md_tbody tr').forEach(tr => {
+      const hit = !q || (tr.dataset.s||'').includes(q);
+      tr.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    const c = $('md_count'); if (c) c.textContent = shown;
+  };
   window.mdAdd = async () => {
     const cfg = MASTER_TABS[_mdTab];
     const body = collect();
