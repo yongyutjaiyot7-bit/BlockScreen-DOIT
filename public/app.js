@@ -22,6 +22,7 @@ function renderPage(page, params = {}) {
   const app = document.getElementById('app');
   const pages = {
     home: pageHome,
+    cleanMenu: pageCleanMenu,
     clean: pageClean,
     cleanNew: pageCleanNew,
     cleanDetail: pageCleanDetail,
@@ -54,7 +55,7 @@ function renderPage(page, params = {}) {
 
 function updateBottomNav(page) {
   document.querySelectorAll('.bottomnav button').forEach(b => b.classList.remove('active'));
-  const map = { home: 'nav-home', clean: 'nav-home', press: 'nav-home', internal: 'nav-internal', external: 'nav-external', search: 'nav-search', blocks: 'nav-blocks' };
+  const map = { home: 'nav-home', cleanMenu: 'nav-home', clean: 'nav-home', press: 'nav-home', internal: 'nav-internal', external: 'nav-external', search: 'nav-search', blocks: 'nav-blocks' };
   const root = page.replace(/[A-Z].*/,'');
   const id = map[root] || map[page] || 'nav-home';
   const el = document.getElementById(id);
@@ -76,7 +77,7 @@ function pageHome(app) {
   app.innerHTML = `
     <div class="topnav"><h1>📦 BLOCK SCREEN</h1><small style="color:var(--muted)">${todayStr()}</small></div>
     <div class="home-grid">
-      <div class="home-card" onclick="renderPage('cleanNew')">
+      <div class="home-card" onclick="renderPage('cleanMenu')">
         <div class="hc-icon">🧹</div>
         <div class="hc-title">ล้าง/โค๊ตบล็อก</div>
         <div class="hc-sub">บันทึกการล้างและโค๊ต</div>
@@ -102,19 +103,44 @@ function pageHome(app) {
 // ══════════════════════════════════════════════════════
 //  MODULE 1 – ล้าง/โค๊ตบล็อก
 // ══════════════════════════════════════════════════════
+function pageCleanMenu(app) {
+  app.innerHTML = `
+    <div class="topnav">
+      <button class="back-btn" onclick="renderPage('home')">‹</button>
+      <h1>🧹 ล้าง/โค๊ตบล็อก</h1>
+    </div>
+    <div class="page">
+      <div class="card">
+        <div class="card-title">บันทึกงาน</div>
+        <div class="menu-actions">
+          <button class="menu-btn menu-btn-primary" onclick="renderPage('cleanNew')"><span class="mb-ico">🧽</span><span>บันทึกล้าง/โค๊ต</span></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">ข้อมูล / รายงาน</div>
+        <div class="menu-actions">
+          <button class="menu-btn menu-btn-report" onclick="renderPage('clean')"><span class="mb-ico">📋</span><span>ตารางข้อมูล (DATA BASE 1)</span></button>
+        </div>
+      </div>
+    </div>`;
+}
+
 async function pageClean(app) {
   const { data: rows } = await api('/api/clean');
   const steps = master.process_steps;
   const cols = 4 + steps.length + 3;
   app.innerHTML = `
     <div class="topnav">
-      <button class="back-btn" onclick="renderPage('home')">‹</button>
+      <button class="back-btn" onclick="renderPage('cleanMenu')">‹</button>
       <h1>🧹 DATA BASE 1</h1>
       <button class="btn-primary btn-sm" onclick="renderPage('cleanNew')">+ เพิ่ม</button>
     </div>
     <div class="page">
       <div class="card">
-        <div class="card-title">บันทึกการล้างบล็อกสกรีน</div>
+        <div class="row gap-sm" style="align-items:center;margin-bottom:.7rem">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">บันทึกการล้างบล็อกสกรีน</span>
+          <button class="btn-success btn-sm" onclick="exportClean()">⬇️ Excel</button>
+        </div>
         <div class="table-scroll">
           <table class="db1">
             <thead><tr>
@@ -140,6 +166,23 @@ async function pageClean(app) {
         </div>
       </div>
     </div>`;
+
+  window.exportClean = () => {
+    if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
+    const data = rows.map(r=>{
+      const row = {
+        'เลขที่เอกสาร': r.doc_no, 'วันที่': fmtDate(r.date),
+        'เลขที่บล็อก': r.block_no||'', 'ขนาดบล็อก': r.size_label||'',
+      };
+      steps.forEach(s=>{ row[s.name] = r.process_step===s.name ? '1' : ''; });
+      row['พนักงานคนที่ 1'] = r.emp1_name||'';
+      row['พนักงานคนที่ 2'] = r.emp2_name||'';
+      row['หมายเหตุ'] = r.remarks||'';
+      return row;
+    });
+    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'DB1');XLSX.writeFile(wb,'DataBase1_ล้างโค๊ตบล็อก.xlsx');
+  };
 }
 
 const MAX_CLEAN_BLOCKS = 100;
@@ -149,7 +192,7 @@ function pageCleanNew(app) {
   const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
     <div class="topnav">
-      <button class="back-btn" onclick="renderPage('home')">‹</button>
+      <button class="back-btn" onclick="renderPage('cleanMenu')">‹</button>
       <h1>🧹 ล้าง/โค๊ตบล็อก</h1>
       <button class="btn-primary btn-sm" onclick="renderPage('clean')">📋 รายการ</button>
     </div>
@@ -161,8 +204,8 @@ function pageCleanNew(app) {
         <table class="ftable">
           <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
-          <tr><td class="lbl">ขั้นตอน</td><td class="in"><select id="c_step">${stepOpts}</select></td></tr>
-          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1</td><td class="in">
+          <tr><td class="lbl">ขั้นตอน <span class="req">*</span></td><td class="in"><select id="c_step">${stepOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1 <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="c_emp1" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'c_emp1_name')"/><button class="scan-btn" onclick="openScan(v=>{$('c_emp1').value=v;lookupEmp($('c_emp1'),'c_emp1_name')})">📷</button></div>
             <div id="c_emp1_name" class="emp-name"></div></td></tr>
           <tr><td class="lbl">รหัสพนักงาน BL คนที่ 2</td><td class="in">
@@ -216,6 +259,8 @@ function pageCleanNew(app) {
   renderCleanBlocks();
 
   window.submitClean = async () => {
+    if (!$('c_step').value) { toast('กรุณาเลือกขั้นตอน','red'); return; }
+    if (!$('c_emp1').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานคนที่ 1','red'); return; }
     if (window._cleanBlocks.length === 0) { toast('กรุณาเพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
     const body = {
       date: todayISO(),
@@ -438,8 +483,8 @@ function pagePressNew(app) {
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
           <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
-          <tr><td class="lbl">หน่วยงาน</td><td class="in"><select id="p_dept">${deptOpts}</select></td></tr>
-          <tr><td class="lbl">เลขที่บล็อกเดิม</td><td class="in">
+          <tr><td class="lbl">หน่วยงาน <span class="req">*</span></td><td class="in"><select id="p_dept">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">เลขที่บล็อกเดิม <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="p_old_block" placeholder="สแกน / พิมพ์" class="flex1" oninput="lookupFrame(this.value)"/><button class="scan-btn" onclick="openScan(v=>{$('p_old_block').value=v;lookupFrame(v);})">📷</button></div></td></tr>
           <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="p_framesize">-</td></tr>
         </table>
@@ -461,9 +506,9 @@ function pagePressNew(app) {
 
       <div class="card">
         <table class="ftable">
-          <tr><td class="lbl">ปัญหา</td><td class="in"><select id="p_problem" onchange="togglePressRemark()">${probOpts}</select></td></tr>
+          <tr><td class="lbl">ปัญหา <span class="req">*</span></td><td class="in"><select id="p_problem" onchange="togglePressRemark()">${probOpts}</select></td></tr>
           <tr><td class="lbl">หมายเหตุ</td><td class="in"><input id="p_remark" placeholder="ระบุเพิ่มเติม (จำเป็นเมื่อเลือก อื่นๆ)"/></td></tr>
-          <tr><td class="lbl">รหัสพนักงานผู้ร้องขอ</td><td class="in">
+          <tr><td class="lbl">รหัสพนักงานผู้ร้องขอ <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="p_emp" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'p_emp_name')"/><button class="scan-btn" onclick="openScan(v=>{$('p_emp').value=v;lookupEmp($('p_emp'),'p_emp_name')})">📷</button></div>
             <div id="p_emp_name" class="emp-name"></div></td></tr>
         </table>
@@ -634,7 +679,7 @@ async function pagePressInspect(app, {doc_no}) {
           <tr><td class="lbl">เวลา</td><td class="auto">${d.time||'-'} น.</td></tr>
           <tr><td class="lbl">กำหนดวันที่เสร็จ</td><td class="in"><input type="date" id="i_due_date" value="${todayISO()}"/></td></tr>
           <tr><td class="lbl">กำหนดเวลาเสร็จ</td><td class="in"><input type="time" id="i_due_time" value="${nowTime()}"/></td></tr>
-          <tr><td class="lbl">เลขที่บล็อกใหม่</td><td class="in">
+          <tr><td class="lbl">เลขที่บล็อกใหม่ <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="i_new_block" class="flex1" placeholder="สแกน / พิมพ์" oninput="lookupNewFrame(this.value)"/><button class="scan-btn" onclick="openScan(v=>{$('i_new_block').value=v;lookupNewFrame(v);})">📷</button></div></td></tr>
           <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="i_framesize">-</td></tr>
           <tr><td class="lbl">รหัสภายใน</td><td class="auto">${join('internal_code')}</td></tr>
@@ -666,7 +711,7 @@ async function pagePressInspect(app, {doc_no}) {
       <div class="card">
         <div class="card-title">ผู้ปฏิบัติ</div>
         <table class="ftable">
-          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1</td><td class="in">
+          <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1 <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="i_emp1" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="onEmp1(this)"/><button class="scan-btn" onclick="openScan(v=>{$('i_emp1').value=v;onEmp1($('i_emp1'));})">📷</button></div>
             <div id="i_emp1_n" class="emp-name"></div></td></tr>
           <tr><td class="lbl">รหัสพนักงาน BL คนที่ 2</td><td class="in">
@@ -806,7 +851,7 @@ async function pagePressReceive(app, {doc_no}) {
       </div>
       <div class="card"><div class="card-title">ผู้ตรวจรับและส่ง</div>
         <table class="ftable">
-          <tr><td class="lbl">รหัสพนักงาน</td><td class="in">
+          <tr><td class="lbl">รหัสพนักงาน <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="r_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="onREmp(this)"/><button class="scan-btn" onclick="openScan(v=>{$('r_emp').value=v;onREmp($('r_emp'));})">📷</button></div>
             <div id="r_emp_n" class="emp-name"></div></td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto" id="r_date">-</td></tr>
@@ -843,16 +888,16 @@ async function pagePressStore(app, {doc_no}) {
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
           <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">${d.doc_no}</td></tr>
-          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="st_dept">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in"><select id="st_dept">${deptOpts}</select></td></tr>
           <tr><td class="lbl">เลขที่บล็อก</td><td class="auto">${d.new_block_no||'-'}</td></tr>
           <tr><td class="lbl">ขนาดเฟรม</td><td class="auto" id="st_frame">-</td></tr>
           <tr><td class="lbl">รหัสภายใน</td><td class="auto">${join('internal_code')}</td></tr>
           <tr><td class="lbl">ลำดับสี</td><td class="auto">${join('color_order')}</td></tr>
           <tr><td class="lbl">Revision</td><td class="auto">${join('revision')}</td></tr>
           <tr><td class="lbl">เบอร์ผ้า</td><td class="auto">${join('fabric_no')}</td></tr>
-          <tr><td class="lbl">ที่จัดเก็บ</td><td class="in"><div class="row gap-sm"><input id="st_loc" class="flex1" placeholder="เช่น A1/1 (สแกน/พิมพ์)"/><button class="scan-btn" onclick="openScan(v=>$('st_loc').value=v)">📷</button></div></td></tr>
+          <tr><td class="lbl">ที่จัดเก็บ <span class="req">*</span></td><td class="in"><div class="row gap-sm"><input id="st_loc" class="flex1" placeholder="เช่น A1/1 (สแกน/พิมพ์)"/><button class="scan-btn" onclick="openScan(v=>$('st_loc').value=v)">📷</button></div></td></tr>
           <tr><td class="lbl">หมายเหตุ</td><td class="in"><input id="st_remark" placeholder="ระบุเพิ่มเติม"/></td></tr>
-          <tr><td class="lbl">รหัสพนักงานผู้จัดเก็บ</td><td class="in"><div class="row gap-sm"><input id="st_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'st_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('st_emp').value=v;lookupEmp($('st_emp'),'st_emp_n')})">📷</button></div><div id="st_emp_n" class="emp-name"></div></td></tr>
+          <tr><td class="lbl">รหัสพนักงานผู้จัดเก็บ <span class="req">*</span></td><td class="in"><div class="row gap-sm"><input id="st_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'st_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('st_emp').value=v;lookupEmp($('st_emp'),'st_emp_n')})">📷</button></div><div id="st_emp_n" class="emp-name"></div></td></tr>
         </table>
       </div>
       <button class="btn-danger" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="doStore('${doc_no}')">จบขั้นตอน</button>
@@ -1255,11 +1300,11 @@ function pageExternalStretchSend(app) {
           <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
-          <tr><td class="lbl">หน่วยงานที่ส่ง</td><td class="in"><select id="sd_from">${deptOpts}</select></td></tr>
-          <tr><td class="lbl">รหัสพนักงาน BL ผู้ส่ง</td><td class="in">
+          <tr><td class="lbl">หน่วยงานที่ส่ง <span class="req">*</span></td><td class="in"><select id="sd_from">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL ผู้ส่ง <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="sd_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'sd_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('sd_emp').value=v;lookupEmp($('sd_emp'),'sd_emp_n')})">📷</button></div>
             <div id="sd_emp_n" class="emp-name"></div></td></tr>
-          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="sd_to"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in"><select id="sd_to"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
         </table>
       </div>
       <div class="card">
@@ -1350,9 +1395,9 @@ function pageExternalStretchReceive(app) {
           <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
-          <tr><td class="lbl">หน่วยงานที่ส่ง</td><td class="in"><select id="rc_from">${deptOpts}</select></td></tr>
-          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="rc_to">${deptOpts}</select></td></tr>
-          <tr><td class="lbl">รหัสพนักงาน BL ผู้รับ</td><td class="in">
+          <tr><td class="lbl">หน่วยงานที่ส่ง <span class="req">*</span></td><td class="in"><select id="rc_from"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in"><select id="rc_to">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">รหัสพนักงาน BL ผู้รับ <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="rc_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'rc_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('rc_emp').value=v;lookupEmp($('rc_emp'),'rc_emp_n')})">📷</button></div>
             <div id="rc_emp_n" class="emp-name"></div></td></tr>
         </table>
@@ -1495,14 +1540,14 @@ function externalForm(app, title, type, backPage) {
         <div class="grid2">
           <div class="form-group"><label>วันที่</label><input type="date" id="e_date" value="${todayISO()}"/></div>
           <div class="form-group"><label>เวลา</label><input type="time" id="e_time" value="${nowTime()}"/></div>
-          <div class="form-group"><label>หน่วยงานที่ส่ง</label>
+          <div class="form-group"><label>หน่วยงานที่ส่ง <span class="req">*</span></label>
             <select id="e_from">${master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('')}</select>
           </div>
-          <div class="form-group"><label>หน่วยงานที่รับ</label>
+          <div class="form-group"><label>หน่วยงานที่รับ <span class="req">*</span></label>
             <select id="e_to">${master.departments.map(d=>`<option value="${d.id}" ${d.id==='KTE'&&!isReceive?'selected':d.id==='BL'&&isReceive?'selected':''}>${d.id}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="form-group"><label>รหัสพนักงาน BL</label>
+        <div class="form-group"><label>รหัสพนักงาน BL <span class="req">*</span></label>
           <div class="row gap-sm">
             <input id="e_emp" class="flex1" oninput="lookupEmp(this,'e_emp_n')"/>
             <button class="scan-btn" onclick="openScan(v=>{$('e_emp').value=v;lookupEmp($('e_emp'),'e_emp_n')})">📷</button>
@@ -1588,31 +1633,43 @@ function pageExternalReceive(app) { externalForm(app,'📥 รับบล็อ
 //  SEARCH
 // ══════════════════════════════════════════════════════
 function pageSearch(app) {
+  const statusBadgeS = { available:'badge-green', in_use:'badge-yellow', stored:'badge-gray', out:'badge-red', maintenance:'badge-red', external:'badge-yellow' };
   app.innerHTML = `
     <div class="topnav"><h1>🔍 ค้นหา</h1></div>
     <div class="page">
-      <div class="card">
-        <div class="card-title">1. ค้นหาเลขที่บล็อก</div>
-        <div class="row gap-sm">
-          <input id="q_block" class="flex1" placeholder="เลขบล็อก" onkeydown="if(event.key==='Enter')searchBlock()"/>
+      <div class="search-hero">
+        <div class="sh-glow"></div>
+        <div class="sh-icon">🔎</div>
+        <div class="sh-text">
+          <div class="sh-title">ค้นหาข้อมูลบล็อก</div>
+          <div class="sh-sub">ค้นด้วยเลขบล็อก · รหัสภายใน · หรือดูบล็อกค้างส่งคืน</div>
+        </div>
+      </div>
+
+      <div class="card search-card">
+        <div class="card-title"><span class="search-num">1</span> ค้นหาเลขที่บล็อก</div>
+        <div class="search-field">
+          <span class="sf-ico">🏷️</span>
+          <input id="q_block" class="flex1" placeholder="พิมพ์เลขบล็อก แล้วกด Enter" onkeydown="if(event.key==='Enter')searchBlock()"/>
           <button class="scan-btn" onclick="openScan(v=>{$('q_block').value=v;searchBlock()})">📷</button>
           <button class="btn-primary" onclick="searchBlock()">ค้นหา</button>
         </div>
         <div id="r_block" class="mt"></div>
       </div>
 
-      <div class="card">
-        <div class="card-title">2. ค้นหารหัสภายใน</div>
-        <div class="row gap-sm">
-          <input id="q_code" class="flex1" placeholder="รหัสภายใน เช่น H-E-26-01"/>
+      <div class="card search-card">
+        <div class="card-title"><span class="search-num">2</span> ค้นหารหัสภายใน</div>
+        <div class="search-field">
+          <span class="sf-ico">🔤</span>
+          <input id="q_code" class="flex1" placeholder="เช่น H-E-26-01" onkeydown="if(event.key==='Enter')searchCode()"/>
           <button class="btn-primary" onclick="searchCode()">ค้นหา</button>
         </div>
         <div id="r_code" class="mt"></div>
       </div>
 
-      <div class="card">
-        <div class="card-title">3. บล็อกที่ KTE/NOVA ยังไม่ส่งคืน</div>
-        <button class="btn-secondary" onclick="searchPending()">ดูรายการ</button>
+      <div class="card search-card">
+        <div class="card-title"><span class="search-num">3</span> บล็อกที่ KTE/NOVA ยังไม่ส่งคืน</div>
+        <button class="btn-secondary" style="width:100%;padding:.75rem" onclick="searchPending()">📋 ดูรายการค้างส่งคืน</button>
         <div id="r_pending" class="mt"></div>
       </div>
     </div>`;
@@ -1622,12 +1679,19 @@ function pageSearch(app) {
     if (!no) return;
     const { data } = await api(`/api/search/block/${no}`);
     const el = $('r_block');
-    if (!data.block) { el.innerHTML = `<p style="color:var(--red)">ไม่พบบล็อก ${no}</p>`; return; }
+    if (!data.block) { el.innerHTML = `<div class="result-empty">😕 ไม่พบบล็อก ${no}</div>`; return; }
+    const b = data.block;
     el.innerHTML = `
-      <div style="margin-bottom:.5rem">
-        <strong>${data.block.block_no}</strong>
-        <span class="badge badge-blue" style="margin-left:.5rem">${data.block.status}</span>
-        ขนาด: ${data.block.size_label||'-'} · ที่จัดเก็บ: ${data.block.location||'-'} · หน่วยงาน: ${data.block.current_dept||'-'}
+      <div class="result-card">
+        <div class="rc-head">
+          <span class="rc-block">${b.block_no}</span>
+          <span class="badge ${statusBadgeS[b.status]||'badge-blue'}">${b.status}</span>
+        </div>
+        <div class="rc-stats">
+          <div class="stat-pill"><span class="sp-l">ขนาด</span><span class="sp-v">${b.size_label||'-'}</span></div>
+          <div class="stat-pill"><span class="sp-l">ที่จัดเก็บ</span><span class="sp-v">${b.location||'-'}</span></div>
+          <div class="stat-pill"><span class="sp-l">หน่วยงาน</span><span class="sp-v">${b.current_dept||'-'}</span></div>
+        </div>
       </div>
       ${data.pressHistory.length?`<details><summary style="cursor:pointer;color:var(--muted)">ประวัติร้องขออัด (${data.pressHistory.length})</summary>
         ${data.pressHistory.map(h=>`<div class="history-entry">${h.doc_no} · ${h.date} · ${h.status}</div>`).join('')}
@@ -1698,32 +1762,87 @@ async function pageBlocks(app) {
         </div>
       </div>
       <div class="card">
-        <div class="card-title">บล็อกทั้งหมด (${blocks.length})</div>
+        <div class="card-title">บล็อกทั้งหมด (<span id="blk_count">${blocks.length}</span>)</div>
+        <div class="row gap-sm mb">
+          <input id="blk_search" class="flex1" placeholder="🔍 ค้นหา เลขบล็อก / ที่จัดเก็บ / หน่วยงาน" oninput="filterBlocks(this.value)"/>
+          <button class="btn-secondary btn-sm" onclick="$('blk_search').value='';filterBlocks('')">ล้าง</button>
+        </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>เลขบล็อก</th><th>QR</th><th>ขนาด</th><th>ผ้า</th><th>สถานะ</th><th>ที่จัดเก็บ</th><th>หน่วยงาน</th><th></th></tr></thead>
-            <tbody>
-              ${blocks.map(b=>`<tr>
-                <td><strong>${b.block_no}</strong></td>
-                <td><img src="/api/qr/${b.block_no}" width="48" height="48" style="border-radius:4px;background:#fff"/></td>
-                <td style="font-size:.78rem">${b.size_label||'-'}</td>
-                <td style="font-size:.78rem">${b.fabric_no||'-'}</td>
-                <td><span class="badge ${statusBadge[b.status]||'badge-gray'}">${b.status}</span></td>
-                <td>${b.location||'-'}</td>
-                <td>${b.current_dept||'-'}</td>
-                <td><button class="btn-sm btn-danger" onclick="delBlock('${b.block_no}')">ลบ</button></td>
-              </tr>`).join('')}
-            </tbody>
+            <thead><tr><th>เลขบล็อก</th><th>QR</th><th>ขนาด</th><th>สถานะ</th><th>ที่จัดเก็บ</th><th>หน่วยงาน</th><th></th></tr></thead>
+            <tbody id="blk_tbody"></tbody>
           </table>
         </div>
+        <div class="pager" id="blk_pager"></div>
       </div>
     </div>`;
+
+  const PAGE_SIZE = 10;
+  let _blkPage = 1, _blkQuery = '';
+  const _blkFiltered = () => {
+    const q = _blkQuery.trim().toLowerCase();
+    return q ? blocks.filter(b => (b.block_no+' '+(b.location||'')+' '+(b.current_dept||'')).toLowerCase().includes(q)) : blocks;
+  };
+  function renderBlockPage() {
+    const list = _blkFiltered();
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    if (_blkPage > pages) _blkPage = pages;
+    const start = (_blkPage - 1) * PAGE_SIZE;
+    const rows = list.slice(start, start + PAGE_SIZE);
+    $('blk_count').textContent = list.length;
+    $('blk_tbody').innerHTML = rows.length ? rows.map(b=>`<tr>
+      <td><strong>${b.block_no}</strong></td>
+      <td><img src="/api/qr/${b.block_no}" width="48" height="48" style="border-radius:4px;background:#fff"/></td>
+      <td style="font-size:.78rem">${b.size_label||'-'}</td>
+      <td><span class="badge ${statusBadge[b.status]||'badge-gray'}">${b.status}</span></td>
+      <td>${b.location||'-'}</td>
+      <td>${b.current_dept||'-'}</td>
+      <td><div class="row gap-sm" style="justify-content:flex-end">
+        <button class="btn-sm btn-secondary" onclick="editBlock('${b.block_no}')">แก้ไข</button>
+        <button class="btn-sm btn-danger" onclick="delBlock('${b.block_no}')">ลบ</button>
+      </div></td></tr>`).join('') : `<tr><td colspan="7" class="no-data">ไม่พบข้อมูล</td></tr>`;
+    $('blk_pager').innerHTML = `
+      <button class="btn-sm btn-secondary" ${_blkPage<=1?'disabled':''} onclick="blkGo(${_blkPage-1})">‹ ก่อนหน้า</button>
+      <span class="pager-info">หน้า ${_blkPage} / ${pages} · ${list.length} รายการ</span>
+      <button class="btn-sm btn-secondary" ${_blkPage>=pages?'disabled':''} onclick="blkGo(${_blkPage+1})">ถัดไป ›</button>`;
+  }
+  window.blkGo = (p) => { _blkPage = p; renderBlockPage(); document.querySelector('#blk_tbody').scrollIntoView({block:'nearest'}); };
+  window.filterBlocks = (q) => { _blkQuery = q||''; _blkPage = 1; renderBlockPage(); };
+  renderBlockPage();
 
   window.addNewBlock = async () => {
     const block_no = $('nb_no').value.trim();
     if (!block_no) { toast('กรุณากรอกเลขบล็อก','red'); return; }
     await api('/api/block','POST',{block_no, size_label:$('nb_size').value, fabric_no:$('nb_fabric').value});
     toast('เพิ่มบล็อก '+block_no);
+    renderPage('blocks');
+  };
+
+  window.editBlock = (no) => {
+    const b = blocks.find(x=>x.block_no===no); if (!b) return;
+    const deptOpts = master.departments.map(d=>`<option value="${d.id}" ${d.id===b.current_dept?'selected':''}>${d.id}</option>`).join('');
+    const statusOpts = ['available','in_use','out','maintenance'].map(s=>`<option value="${s}" ${s===b.status?'selected':''}>${s}</option>`).join('');
+    closeEditBlock();
+    const ov = document.createElement('div');
+    ov.id = 'editBlockModal'; ov.className = 'modal';
+    ov.innerHTML = `<div class="modal-box">
+      <div class="modal-header"><span>✏️ แก้ไขบล็อก ${no}</span><button onclick="closeEditBlock()">✕</button></div>
+      <div class="form-group"><label>ขนาด</label><input id="eb_size" value="${b.size_label||''}"/></div>
+      <div class="form-group"><label>ที่จัดเก็บ</label><input id="eb_loc" value="${b.location||''}"/></div>
+      <div class="form-group"><label>หน่วยงาน</label><select id="eb_dept">${deptOpts}</select></div>
+      <div class="form-group"><label>สถานะ</label><select id="eb_status">${statusOpts}</select></div>
+      <button class="btn-primary" style="width:100%;padding:.8rem" onclick="saveEditBlock('${no}')">บันทึก</button></div>`;
+    ov.onclick = e => { if (e.target===ov) closeEditBlock(); };
+    document.body.appendChild(ov);
+  };
+  window.closeEditBlock = () => { const m = document.getElementById('editBlockModal'); if (m) m.remove(); };
+  window.saveEditBlock = async (no) => {
+    await api('/api/block/'+encodeURIComponent(no),'PUT',{
+      size_label:$('eb_size').value.trim(), location:$('eb_loc').value.trim(),
+      current_dept:$('eb_dept').value, status:$('eb_status').value,
+    });
+    window.closeEditBlock();
+    toast('บันทึกบล็อก '+no);
     renderPage('blocks');
   };
 

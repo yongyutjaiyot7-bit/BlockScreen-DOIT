@@ -13,7 +13,7 @@ import {
   createInternalDoc, getInternalDoc, listInternalDocs, listInternalDocsByStatus, completeTransport, completeStore, listInternalStored,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
-  bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock,
+  bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock, updateBlock,
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +44,7 @@ app.post('/api/block', wrap((req, res) => {
   ok(res, addBlock(block_no, size_label, fabric_no));
 }));
 app.get('/api/blocks', wrap((req, res) => ok(res, listBlocks())));
+app.put('/api/block/:no', wrap((req, res) => ok(res, updateBlock(req.params.no, req.body || {}))));
 app.delete('/api/block/:no', wrap((req, res) => ok(res, deleteBlock(req.params.no))));
 
 // ---------- EXCEL IMPORT (bulk upsert) ----------

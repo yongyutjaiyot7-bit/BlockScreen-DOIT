@@ -217,6 +217,20 @@ export function addBlock(block_no, size_label, fabric_no) {
   return getBlock(block_no);
 }
 
+export function updateBlock(block_no, data) {
+  const cur = getBlock(block_no);
+  if (!cur) throw new Error('ไม่พบบล็อก');
+  const ts = now();
+  run('UPDATE blocks SET size_label=?, fabric_no=?, location=?, current_dept=?, status=?, updated_at=? WHERE block_no=?',
+    [ data.size_label ?? cur.size_label ?? null,
+      data.fabric_no  ?? cur.fabric_no  ?? null,
+      data.location   ?? cur.location   ?? null,
+      data.current_dept ?? cur.current_dept ?? null,
+      data.status     ?? cur.status     ?? 'available',
+      ts, block_no ]);
+  return getBlock(block_no);
+}
+
 export function bulkUpsertBlocks(rows) {
   const ts = now();
   let added = 0, updated = 0;

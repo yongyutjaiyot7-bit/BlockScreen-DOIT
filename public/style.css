@@ -299,6 +299,11 @@ tr.row-red td{background:var(--red-soft)!important;}
   box-shadow:0 8px 18px -6px rgba(14,165,233,.5);flex-basis:100%;flex-direction:row;justify-content:center;}
 .menu-btn-report .mb-ico{font-size:1.3rem;}
 
+/* ===================== PAGINATION ===================== */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-top:.8rem;}
+.pager .pager-info{font-size:.82rem;font-weight:700;color:var(--muted);text-align:center;flex:1;}
+.pager button[disabled]{opacity:.45;cursor:not-allowed;}
+
 /* ===================== STEPS ===================== */
 .steps{display:flex;gap:6px;margin-bottom:1.1rem;}
 .step{flex:1;text-align:center;padding:.5rem .2rem;font-size:.72rem;font-weight:700;color:var(--muted);
