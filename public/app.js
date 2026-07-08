@@ -1259,7 +1259,7 @@ function pageExternalStretchSend(app) {
           <tr><td class="lbl">รหัสพนักงาน BL ผู้ส่ง</td><td class="in">
             <div class="row gap-sm"><input id="sd_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'sd_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('sd_emp').value=v;lookupEmp($('sd_emp'),'sd_emp_n')})">📷</button></div>
             <div id="sd_emp_n" class="emp-name"></div></td></tr>
-          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="sd_to">${deptOpts}</select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ</td><td class="in"><select id="sd_to"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
         </table>
       </div>
       <div class="card">
