@@ -284,6 +284,21 @@ tr.row-red td{background:var(--red-soft)!important;}
 .home-card:nth-child(6)::after{background:linear-gradient(90deg,#e11d48,#fb7185);}
 .home-card:nth-child(6) .hc-icon{background:#ffe4e6;}
 
+/* ===================== MENU ACTION BUTTONS ===================== */
+.menu-actions{display:flex;gap:.6rem;flex-wrap:wrap;}
+.menu-btn{flex:1 1 120px;display:flex;flex-direction:column;align-items:center;gap:.4rem;
+  padding:1rem .6rem;border-radius:var(--radius-md);border:1px solid var(--border);
+  background:#fff;color:var(--text-2);font-weight:800;font-size:.86rem;box-shadow:var(--shadow-xs);
+  transition:transform .18s,box-shadow .22s,border-color .2s;}
+.menu-btn .mb-ico{font-size:1.6rem;line-height:1;}
+.menu-btn:hover{transform:translateY(-3px);box-shadow:var(--shadow-md);border-color:var(--brand3);}
+.menu-btn:active{transform:scale(.96);}
+.menu-btn-primary{background:linear-gradient(135deg,var(--brand),var(--brand2) 70%,var(--sky));
+  color:#fff;border-color:transparent;box-shadow:0 8px 18px -6px rgba(79,70,229,.5);}
+.menu-btn-report{background:linear-gradient(135deg,#0ea5e9,#38bdf8);color:#fff;border-color:transparent;
+  box-shadow:0 8px 18px -6px rgba(14,165,233,.5);flex-basis:100%;flex-direction:row;justify-content:center;}
+.menu-btn-report .mb-ico{font-size:1.3rem;}
+
 /* ===================== STEPS ===================== */
 .steps{display:flex;gap:6px;margin-bottom:1.1rem;}
 .step{flex:1;text-align:center;padding:.5rem .2rem;font-size:.72rem;font-weight:700;color:var(--muted);

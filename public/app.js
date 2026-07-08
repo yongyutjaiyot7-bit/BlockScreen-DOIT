@@ -34,6 +34,7 @@ function renderPage(page, params = {}) {
     pressStore: pagePressStore,
     pressDB3: pagePressDB3,
     internal: pageInternal,
+    internalDatabase: pageInternalDatabase,
     internalPrepare: pageInternalPrepare,
     internalTransport: pageInternalTransport,
     internalTransportForm: pageInternalTransportForm,
@@ -904,13 +905,56 @@ function pageInternal(app) {
     <div class="page">
       <div class="card">
         <div class="card-title">สร้างเอกสารใหม่</div>
-        <div class="row gap-sm" style="flex-wrap:wrap">
-          <button class="btn-primary" onclick="renderPage('internalPrepare')">🧰 จัดเตรียม</button>
-          <button class="btn-secondary" onclick="renderPage('internalTransport')">🚀 ขนส่ง/ตรวจรับ</button>
-          <button class="btn-secondary" onclick="renderPage('internalReceive')">🗃️ ตรวจรับและจัดเก็บ</button>
+        <div class="menu-actions">
+          <button class="menu-btn menu-btn-primary" onclick="renderPage('internalPrepare')"><span class="mb-ico">📝</span><span>จัดเตรียม</span></button>
+          <button class="menu-btn" onclick="renderPage('internalTransport')"><span class="mb-ico">🚚</span><span>ขนส่ง/ตรวจรับ</span></button>
+          <button class="menu-btn" onclick="renderPage('internalReceive')"><span class="mb-ico">📦</span><span>ตรวจรับและจัดเก็บ</span></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">ข้อมูล / รายงาน</div>
+        <div class="menu-actions">
+          <button class="menu-btn menu-btn-report" onclick="renderPage('internalDatabase')"><span class="mb-ico">📋</span><span>ใบเบิกจ่ายบล็อก</span></button>
         </div>
       </div>
     </div>`;
+}
+
+// ── ตารางใบเบิกจ่ายบล็อก (รายงานการตรวจรับ/จัดเก็บ) ──
+async function pageInternalDatabase(app) {
+  const { data: rows } = await api('/api/internal-stored');
+  const cols = ['วันที่','เลขที่เอกสาร','เลขที่บล็อก','รหัสภายใน','หน่วยงาน','ผู้ส่ง','Revision','สี','ผู้รับ','หน่วยงาน','ที่จัดเก็บ','หมายเหตุ'];
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>📋 ใบเบิกจ่ายบล็อก</h1></div>
+    <div class="page">
+      <div class="card">
+        <div class="row gap-sm" style="align-items:center;margin-bottom:.7rem">
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">รายการที่ตรวจรับและจัดเก็บแล้ว</span>
+          <button class="btn-success btn-sm" onclick="exportIssueSlip()">⬇️ Excel</button>
+        </div>
+        <div class="table-scroll"><table class="db1"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>${rows.length? rows.map(r=>`<tr>
+            <td>${r.doc_date||'-'}</td><td><strong>${r.doc_no}</strong></td>
+            <td class="ctr"><strong>${r.block_no}</strong></td>
+            <td style="color:var(--red);font-weight:700">${r.internal_code||'-'}</td>
+            <td class="ctr"><strong>${r.from_dept||'-'}</strong></td><td>${r.sender||'-'}</td>
+            <td class="ctr">${r.revision||'-'}</td><td class="ctr">${r.color_order||'-'}</td>
+            <td>${r.receiver||'-'}</td><td class="ctr"><strong>${r.to_dept||'-'}</strong></td>
+            <td class="ctr"><strong>${r.storage_location||'-'}</strong></td><td>${r.remark||''}</td>
+          </tr>`).join('') : `<tr><td colspan="${cols.length}" class="no-data">ยังไม่มีรายการที่จัดเก็บ</td></tr>`}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  window.exportIssueSlip = () => {
+    if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
+    const data = rows.map(r=>({
+      'วันที่':r.doc_date,'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'รหัสภายใน':r.internal_code,
+      'หน่วยงาน(ผู้ส่ง)':r.from_dept,'ผู้ส่ง':r.sender,'Revision':r.revision,'สี':r.color_order,
+      'ผู้รับ':r.receiver,'หน่วยงาน(ผู้รับ)':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remark,
+    }));
+    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'IssueSlip');XLSX.writeFile(wb,'ใบเบิกจ่ายบล็อก.xlsx');
+  };
 }
 
 // ── ขั้นตอนการเตรียม (จัดเตรียม) ──
@@ -1193,7 +1237,7 @@ async function pageInternalStoreForm(app, {doc_no}) {
       date: todayISO(), time: nowTime(), locations: window._storeLoc,
     });
     toast('จบขั้นตอนตรวจรับและจัดเก็บ');
-    renderPage('internal');
+    renderPage('internalDatabase');
   };
 }
 

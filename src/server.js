@@ -10,7 +10,7 @@ import {
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
   summitPressInspect, receivePress,
   createStretchSend, listStretchSendRows, createStretchReceive, listStretchReceiveRows,
-  createInternalDoc, getInternalDoc, listInternalDocs, listInternalDocsByStatus, completeTransport, completeStore,
+  createInternalDoc, getInternalDoc, listInternalDocs, listInternalDocsByStatus, completeTransport, completeStore, listInternalStored,
   createExternalDoc, getExternalDoc, listExternalDocs,
   searchByBlockNo, searchByInternalCode, searchExternalPending,
   bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock,
@@ -105,6 +105,7 @@ app.get('/api/internal-doc', wrap((req, res) => {
 app.get('/api/internal-list', wrap((req, res) => ok(res, listInternalDocsByStatus(req.query.status))));
 app.post('/api/internal-transport', wrap((req, res) => ok(res, completeTransport(req.query.doc_no, req.body || {}))));
 app.post('/api/internal-store', wrap((req, res) => ok(res, completeStore(req.query.doc_no, req.body || {}))));
+app.get('/api/internal-stored', wrap((req, res) => ok(res, listInternalStored())));
 
 // ---------- MODULE 4: EXTERNAL TRANSFER ----------
 app.get('/api/external', wrap((req, res) => ok(res, listExternalDocs())));

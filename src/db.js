@@ -139,6 +139,9 @@ try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN size_label TEXT');
 try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN tension_value REAL'); } catch {}
 try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN twist_pass INTEGER'); } catch {}
 try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN frame_pass INTEGER'); } catch {}
+try { getDb().run('ALTER TABLE internal_docs ADD COLUMN prep_emp TEXT'); } catch {}
+try { getDb().run('ALTER TABLE internal_docs ADD COLUMN transport_emp TEXT'); } catch {}
+try { getDb().run('ALTER TABLE internal_docs ADD COLUMN store_emp TEXT'); } catch {}
 save();
 
 // ── Seed master data (from Excel: 79f768a7-...Mobile_barcode_BL2.1.xlsx) ──
@@ -428,8 +431,8 @@ export function listStretchReceiveRows() {
 export function createInternalDoc(type, data) {
   const doc_no = nextDocNo('M', 'internal_docs');
   const ts = now();
-  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
-    [doc_no, type, data.from_dept||null, data.to_dept||null, data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'prepared', ts]);
+  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,prep_emp,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    [doc_no, type, data.from_dept||null, data.to_dept||null, data.emp_code||null, data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'prepared', ts]);
   (data.blocks||[]).forEach(b => {
     const blk = getBlock(b.block_no);
     const films = b.films || [];
@@ -470,8 +473,8 @@ export function completeTransport(doc_no, data) {
     run('INSERT INTO internal_doc_blocks(id,doc_no,block_no,fabric_no,scanned,is_extra) VALUES(?,?,?,?,1,1)',
       [uuid(), doc_no, bno, blk?.fabric_no||null]);
   });
-  run("UPDATE internal_docs SET status='transported', to_dept=COALESCE(?,to_dept), emp_code=?, doc_date=?, doc_time=? WHERE doc_no=?",
-    [data.transport_to_dept||null, data.transport_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
+  run("UPDATE internal_docs SET status='transported', to_dept=COALESCE(?,to_dept), emp_code=?, transport_emp=?, doc_date=?, doc_time=? WHERE doc_no=?",
+    [data.transport_to_dept||null, data.transport_emp||null, data.transport_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
   return get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
 }
 export function completeStore(doc_no, data) {
@@ -482,9 +485,28 @@ export function completeStore(doc_no, data) {
     run('UPDATE blocks SET status=?,location=?,current_dept=?,updated_at=? WHERE block_no=?',
       ['available', loc, data.store_dept||'BL', ts, bno]);
   });
-  run("UPDATE internal_docs SET status='stored', emp_code=?, doc_date=?, doc_time=? WHERE doc_no=?",
-    [data.store_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
+  run("UPDATE internal_docs SET status='stored', emp_code=?, store_emp=?, doc_date=?, doc_time=? WHERE doc_no=?",
+    [data.store_emp||null, data.store_emp||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), doc_no]);
   return get('SELECT * FROM internal_docs WHERE doc_no=?', [doc_no]);
+}
+// รายงานใบเบิกจ่ายบล็อก — 1 แถวต่อบล็อก สำหรับเอกสารที่จัดเก็บแล้ว
+export function listInternalStored() {
+  const docs = all("SELECT * FROM internal_docs WHERE doc_type='prepare' AND status='stored' ORDER BY doc_no DESC LIMIT 500");
+  const rows = [];
+  docs.forEach(d => {
+    const blocks = all('SELECT * FROM internal_doc_blocks WHERE doc_no=? AND scanned=1 ORDER BY block_no', [d.doc_no]);
+    blocks.forEach(b => {
+      rows.push({
+        doc_date: d.doc_date, doc_no: d.doc_no, block_no: b.block_no,
+        internal_code: b.internal_code || '', from_dept: d.from_dept || '',
+        sender: empFirstName(d.prep_emp) || empFirstName(d.transport_emp) || '',
+        revision: b.revision || '', color_order: b.color_order || '',
+        receiver: empFirstName(d.store_emp) || '', to_dept: d.to_dept || '',
+        storage_location: b.storage_location || '', remark: '',
+      });
+    });
+  });
+  return rows;
 }
 export function listInternalDocsByStatus(status) {
   const rows = all("SELECT * FROM internal_docs WHERE doc_type='prepare' AND status=? ORDER BY doc_no DESC LIMIT 200", [status]);
