@@ -1077,8 +1077,12 @@ async function pageInternalTransportForm(app, {doc_no}) {
     val = (val||'').trim(); if (!val) return;
     if (window._transScanned.has(val) || window._transExtra.includes(val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
     const found = prepared.find(b=>b.block_no===val);
-    if (found) window._transScanned.add(val);
-    else window._transExtra.push(val);
+    if (found) { window._transScanned.add(val); }
+    else {
+      // ไม่มีข้อมูลบล็อกนี้ในการเตรียม → ไม่เพิ่มลงไป แต่แจ้งเตือนและบันทึกไว้เป็น "เกินมา"
+      window._transExtra.push(val);
+      toast('ไม่มีข้อมูลบล็อก '+val+' ในรายการเตรียม','red');
+    }
     $('tr_block_in').value='';
     renderTransRows();
   };
@@ -1087,8 +1091,16 @@ async function pageInternalTransportForm(app, {doc_no}) {
     const extraRows = window._transExtra;
     $('tr_matched_count').textContent = scannedRows.length;
     const missing = prepared.filter(b=>!window._transScanned.has(b.block_no)).map(b=>b.block_no);
-    $('tr_missing').textContent = missing.join(', ') || '-';
-    $('tr_extra_list').textContent = extraRows.join(', ') || '-';
+    // ช่องยังไม่สแกน / เกินมา: ถ้ามีข้อมูลให้เป็นสีแดง, ถ้าครบให้เป็นสีเขียว
+    const mCell = $('tr_missing'), eCell = $('tr_extra_list');
+    mCell.textContent = missing.join(', ') || '-';
+    mCell.className = missing.length ? 'in' : 'auto';
+    mCell.style.color = missing.length ? 'var(--red)' : '';
+    mCell.style.fontWeight = missing.length ? '800' : '';
+    eCell.textContent = extraRows.join(', ') || '-';
+    eCell.className = extraRows.length ? 'in' : 'auto';
+    eCell.style.color = extraRows.length ? 'var(--red)' : '';
+    eCell.style.fontWeight = extraRows.length ? '800' : '';
     $('tr_rows').innerHTML = [
       ...scannedRows.map(b=>`<tr><td><strong>${b.block_no}</strong></td><td>${b.internal_code||'-'}</td><td>${b.color_order||'-'}</td><td><span class="badge badge-green">ถูกต้อง</span></td></tr>`),
       ...extraRows.map(bno=>`<tr class="row-red"><td><strong>${bno}</strong></td><td>NI</td><td>NI</td><td><span class="badge badge-red">เกินมา</span></td></tr>`),
@@ -1100,6 +1112,9 @@ async function pageInternalTransportForm(app, {doc_no}) {
     if (!$('tr_dept').value) { toast('กรุณาระบุหน่วยงานที่ขน','red'); return; }
     if (!$('tr_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้ขน','red'); return; }
     if (window._transScanned.size===0 && window._transExtra.length===0) { toast('กรุณาสแกนบล็อกอย่างน้อย 1 รายการ','red'); return; }
+    const missing = prepared.filter(b=>!window._transScanned.has(b.block_no)).map(b=>b.block_no);
+    if (missing.length) { toast('ยังมีบล็อกที่ยังไม่สแกน: '+missing.join(', '),'red'); return; }
+    if (window._transExtra.length) { toast('มีบล็อกเกินมานอกเหนือการเตรียม: '+window._transExtra.join(', '),'red'); return; }
     await api('/api/internal-transport?doc_no='+encodeURIComponent(docNo),'POST',{
       transport_to_dept: $('tr_dept').value, transport_emp: $('tr_emp').value.trim(),
       date: todayISO(), time: nowTime(),
