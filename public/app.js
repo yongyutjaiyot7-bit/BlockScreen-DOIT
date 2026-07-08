@@ -193,9 +193,10 @@ function pageCleanNew(app) {
   window.addCleanBlock = (val) => {
     val = (val || '').trim();
     if (!val) return;
-    if (window._cleanBlocks.includes(val)) { toast('เลขบล็อกซ้ำ: ' + val, 'red'); return; }
-    if (window._cleanBlocks.length >= MAX_CLEAN_BLOCKS) { toast('ครบ ' + MAX_CLEAN_BLOCKS + ' หมายเลขแล้ว', 'red'); return; }
+    if (window._cleanBlocks.includes(val)) { toast('❌ เลขบล็อกซ้ำ: ' + val, 'red'); alarmBeep(); $('c_block_input').value=''; return; }
+    if (window._cleanBlocks.length >= MAX_CLEAN_BLOCKS) { toast('❌ ครบ ' + MAX_CLEAN_BLOCKS + ' หมายเลขแล้ว', 'red'); alarmBeep(); return; }
     window._cleanBlocks.push(val);
+    successBeep();
     $('c_block_input').value = '';
     renderCleanBlocks();
   };
@@ -947,8 +948,9 @@ function pageInternalPrepare(app) {
 
   window.addPrepBlock = (val) => {
     val = (val||'').trim(); if (!val) return;
-    if (window._prepBlocks.find(b=>b.block_no===val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    if (window._prepBlocks.find(b=>b.block_no===val)) { toast('❌ เลขบล็อกซ้ำ: '+val,'red'); alarmBeep(); $('pp_block_in').value=''; return; }
     window._prepBlocks.push({ block_no: val, films: [{internal_code:'',color_order:'',revision:''}] });
+    successBeep();
     $('pp_block_in').value = '';
     renderPrepRows();
   };
@@ -1075,16 +1077,17 @@ async function pageInternalTransportForm(app, {doc_no}) {
 
   window.scanTransport = (val) => {
     val = (val||'').trim(); if (!val) return;
-    if (window._transScanned.has(val) || window._transExtra.includes(val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    if (window._transScanned.has(val) || window._transExtra.includes(val)) { toast('❌ เลขบล็อกซ้ำ: '+val,'red'); alarmBeep(); $('tr_block_in').value=''; return; }
     const found = prepared.find(b=>b.block_no===val);
     if (!found) {
-      // เช็ค error: เลขบล็อกนี้ไม่มีในขั้นตอนจัดเตรียม → เด้งแจ้งเตือน+เสียงบี๊บ+สั่น และไม่เพิ่มลงตาราง
+      // เช็ค error: เลขบล็อกนี้ไม่มีในขั้นตอนจัดเตรียม → เด้งแจ้งเตือน+เสียงรัวๆ และไม่เพิ่มลงตาราง
       toast('❌ ไม่พบเลขบล็อก '+val+' ในรายการจัดเตรียม','red');
       alarmBeep();
       $('tr_block_in').value='';
       return;
     }
     window._transScanned.add(val);
+    successBeep();
     $('tr_block_in').value='';
     renderTransRows();
   };
@@ -1229,10 +1232,12 @@ function pageExternalStretchSend(app) {
 
   window.addSendBlock = async (val) => {
     val = (val||'').trim(); if (!val) return;
-    if (window._sendBlocks.find(b=>b.block_no===val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    if (window._sendBlocks.find(b=>b.block_no===val)) { toast('❌ เลขบล็อกซ้ำ: '+val,'red'); alarmBeep(); $('sd_block_in').value=''; return; }
     let size = '-';
-    try { const { data } = await api('/api/block/'+encodeURIComponent(val)); size = data.size_label || '-'; } catch {}
+    try { const { data } = await api('/api/block/'+encodeURIComponent(val)); size = data.size_label || '-'; }
+    catch { toast('❌ ไม่พบเลขบล็อก '+val+' ในระบบ','red'); alarmBeep(); $('sd_block_in').value=''; return; }
     window._sendBlocks.push({ block_no: val, size_label: size });
+    successBeep();
     $('sd_block_in').value = '';
     renderSendRows();
   };
@@ -1322,10 +1327,12 @@ function pageExternalStretchReceive(app) {
 
   window.addRecvBlock = async (val) => {
     val = (val||'').trim(); if (!val) return;
-    if (window._recvBlocks.find(b=>b.block_no===val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
+    if (window._recvBlocks.find(b=>b.block_no===val)) { toast('❌ เลขบล็อกซ้ำ: '+val,'red'); alarmBeep(); $('rc_block_in').value=''; return; }
     let size='-', fabric='-';
-    try { const { data } = await api('/api/block/'+encodeURIComponent(val)); size = data.size_label||'-'; fabric = data.fabric_no||'-'; } catch {}
+    try { const { data } = await api('/api/block/'+encodeURIComponent(val)); size = data.size_label||'-'; fabric = data.fabric_no||'-'; }
+    catch { toast('❌ ไม่พบเลขบล็อก '+val+' ในระบบ','red'); alarmBeep(); $('rc_block_in').value=''; return; }
     window._recvBlocks.push({ block_no:val, size_label:size, fabric_no:fabric, tension_value:'', twist_pass:null, frame_pass:null });
+    successBeep();
     $('rc_block_in').value = '';
     renderRecvRows();
   };
@@ -1480,9 +1487,10 @@ function externalForm(app, title, type, backPage) {
   window.addEBlock = async (val) => {
     val = val?.trim();
     if (!val) return;
-    if (window._eBlocks.find(b=>b.block_no===val)) { toast('บล็อกซ้ำ!','red'); return; }
+    if (window._eBlocks.find(b=>b.block_no===val)) { toast('❌ บล็อกซ้ำ!','red'); alarmBeep(); $('e_block_in').value=''; return; }
     const blkData = { block_no: val, tension1: null, tension2: null, tension_pass: 0, frame_check_pass: 1 };
     window._eBlocks.push(blkData);
+    successBeep();
     $('e_block_in').value = '';
     renderEBlocks();
   };
@@ -1831,10 +1839,9 @@ function finishScan(val) {
     if (scanSeen.has(val)) { scanLast = now; return; }  // already scanned this session
     scanLast = now;
     scanSeen.add(val);
-    scanCallback && scanCallback(val);
-    if (navigator.vibrate) navigator.vibrate(60);
+    scanCallback && scanCallback(val);   // callback จะเล่นเสียง success/alarm เอง
     const hint = document.querySelector('.scan-hint');
-    if (hint) hint.textContent = `✅ เพิ่ม ${val} (รวม ${scanSeen.size}) · สแกนต่อได้เลย หรือกด ✕ เมื่อเสร็จ`;
+    if (hint) hint.textContent = `เพิ่ม ${val} (รวม ${scanSeen.size}) · สแกนต่อได้เลย หรือกด ✕ เมื่อเสร็จ`;
     return;                                 // keep scanning
   }
   closeScan();
@@ -1852,7 +1859,7 @@ window.manualScan = () => {
   if (!val) return;
   if (scanContinuous) {
     inp.value = '';
-    if (scanSeen.has(val)) { toast('เลขซ้ำ', 'red'); return; }
+    if (scanSeen.has(val)) { toast('❌ เลขซ้ำ: '+val, 'red'); alarmBeep(); return; }
     scanSeen.add(val);
     scanCallback && scanCallback(val);
     const hint = document.querySelector('.scan-hint');
@@ -1924,17 +1931,38 @@ function toast(msg, type = 'ok') {
 
 // เสียงเตือนบี๊บรัวๆ + สั่น (สำหรับมือถือ) เมื่อสแกนข้อมูลผิด/ไม่มีในระบบ
 let _audioCtx = null;
-function alarmBeep(times = 4) {
-  // สั่นรัวๆ บนมือถือที่รองรับ
-  try { if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 120, 60, 120]); } catch {}
-  // เสียงบี๊บด้วย Web Audio API (ไม่ต้องโหลดไฟล์เสียง)
+function _ensureAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!_audioCtx) _audioCtx = new AC();
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+// เสียงยืนยัน "ถูกต้อง" 1 ครั้ง (โทนสูงสั้น น่าฟัง)
+function successBeep() {
+  try { if (navigator.vibrate) navigator.vibrate(45); } catch {}
   try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    if (!_audioCtx) _audioCtx = new AC();
-    if (_audioCtx.state === 'suspended') _audioCtx.resume();
-    const ctx = _audioCtx;
-    const dur = 0.13, gap = 0.08;
+    const ctx = _ensureAudio(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046, t);        // C6
+    osc.frequency.setValueAtTime(1568, t + 0.09); // G6 (โทนไต่ขึ้น = ผ่าน)
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.3, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.2);
+  } catch {}
+}
+function alarmBeep(times = 6) {
+  // สั่นรัวๆ ต่อเนื่องบนมือถือที่รองรับ
+  try { if (navigator.vibrate) navigator.vibrate([120,60,120,60,120,60,120,60,120,60,120]); } catch {}
+  // เสียงเตือนรัวๆ ต่อเนื่องด้วย Web Audio API (ไม่ต้องโหลดไฟล์เสียง)
+  try {
+    const ctx = _ensureAudio(); if (!ctx) return;
+    const dur = 0.13, gap = 0.07;
     for (let i = 0; i < times; i++) {
       const t = ctx.currentTime + i * (dur + gap);
       const osc = ctx.createOscillator();
