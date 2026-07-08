@@ -1077,12 +1077,14 @@ async function pageInternalTransportForm(app, {doc_no}) {
     val = (val||'').trim(); if (!val) return;
     if (window._transScanned.has(val) || window._transExtra.includes(val)) { toast('เลขบล็อกซ้ำ: '+val,'red'); return; }
     const found = prepared.find(b=>b.block_no===val);
-    if (found) { window._transScanned.add(val); }
-    else {
-      // ไม่มีข้อมูลบล็อกนี้ในการเตรียม → ไม่เพิ่มลงไป แต่แจ้งเตือนและบันทึกไว้เป็น "เกินมา"
-      window._transExtra.push(val);
-      toast('ไม่มีข้อมูลบล็อก '+val+' ในรายการเตรียม','red');
+    if (!found) {
+      // เช็ค error: เลขบล็อกนี้ไม่มีในขั้นตอนจัดเตรียม → เด้งแจ้งเตือน+เสียงบี๊บ+สั่น และไม่เพิ่มลงตาราง
+      toast('❌ ไม่พบเลขบล็อก '+val+' ในรายการจัดเตรียม','red');
+      alarmBeep();
+      $('tr_block_in').value='';
+      return;
     }
+    window._transScanned.add(val);
     $('tr_block_in').value='';
     renderTransRows();
   };
@@ -1918,4 +1920,32 @@ function toast(msg, type = 'ok') {
   el.style.borderColor = type === 'red' ? 'var(--red)' : 'var(--green)';
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// เสียงเตือนบี๊บรัวๆ + สั่น (สำหรับมือถือ) เมื่อสแกนข้อมูลผิด/ไม่มีในระบบ
+let _audioCtx = null;
+function alarmBeep(times = 4) {
+  // สั่นรัวๆ บนมือถือที่รองรับ
+  try { if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 120, 60, 120]); } catch {}
+  // เสียงบี๊บด้วย Web Audio API (ไม่ต้องโหลดไฟล์เสียง)
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_audioCtx) _audioCtx = new AC();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    const ctx = _audioCtx;
+    const dur = 0.13, gap = 0.08;
+    for (let i = 0; i < times; i++) {
+      const t = ctx.currentTime + i * (dur + gap);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t); osc.stop(t + dur);
+    }
+  } catch {}
 }
