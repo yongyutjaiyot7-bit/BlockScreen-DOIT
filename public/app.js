@@ -9,19 +9,97 @@ let scanCallback = null;
 let scanStream = null;
 let scanDetector = null;
 
+// ── auth / session ──
+let authToken = localStorage.getItem('bs_token') || '';
+let currentUser = null;
+try { currentUser = JSON.parse(localStorage.getItem('bs_user') || 'null'); } catch { currentUser = null; }
+
+// สิทธิ์การใช้งานตาม role
+const ROLE_LABEL = { administrator:'ผู้ดูแลระบบ', supervisor:'หัวหน้างาน', employee:'พนักงาน' };
+function isRole(...r){ return currentUser && r.includes(currentUser.role); }
+function canManage(){ return isRole('administrator','supervisor'); }   // จัดการข้อมูล/แก้ไข
+function canViewTables(){ return isRole('administrator','supervisor'); } // ตารางข้อมูล/รายงาน
+function canExport(){ return isRole('administrator','supervisor'); }     // export excel
+function canAdmin(){ return isRole('administrator'); }                    // จัดการผู้ใช้
+// หน้าที่พนักงานทั่วไปเข้าไม่ได้
+const GATED_PAGES = {
+  clean:'tables', internalDatabase:'tables', blocks:'tables',
+  externalStretchSendResult:'tables', externalStretchReceiveResult:'tables', pressDB3:'tables',
+  masterData:'manage', userManagement:'admin',
+};
+function allowedPage(page){
+  const g = GATED_PAGES[page];
+  if (!g) return true;
+  if (g==='tables') return canViewTables();
+  if (g==='manage') return canManage();
+  if (g==='admin') return canAdmin();
+  return true;
+}
+
+function logout(){
+  authToken=''; currentUser=null;
+  localStorage.removeItem('bs_token'); localStorage.removeItem('bs_user');
+  renderLogin();
+}
+
 // ── bootstrap ──
 (async () => {
-  const res = await api('/api/master');
-  master = res.data || {};
-  renderPage('home');
+  if (!authToken || !currentUser) { renderLogin(); return; }
+  try {
+    const res = await api('/api/master');
+    master = res.data || {};
+    renderPage('home');
+  } catch { renderLogin(); }
 })();
+
+// ── LOGIN ──
+function renderLogin() {
+  document.querySelector('.bottomnav')?.style.setProperty('display','none');
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">📦</div>
+        <h1 class="login-title">BLOCK SCREEN</h1>
+        <div class="login-sub">ระบบจัดการบล็อกสกรีน · บริษัท ดูอิท จำกัด</div>
+        <div class="form-group"><label>ชื่อผู้ใช้</label><input id="lg_user" placeholder="username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div class="form-group"><label>รหัสผ่าน</label><input id="lg_pass" type="password" placeholder="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <button class="btn-primary" style="width:100%;padding:.85rem;font-size:1.05rem" onclick="doLogin()">เข้าสู่ระบบ</button>
+        <div id="lg_err" class="login-err"></div>
+      </div>
+    </div>`;
+  setTimeout(()=>document.getElementById('lg_user')?.focus(), 100);
+}
+window.doLogin = async () => {
+  const username = document.getElementById('lg_user').value.trim();
+  const password = document.getElementById('lg_pass').value;
+  const errEl = document.getElementById('lg_err');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'; return; }
+  try {
+    const res = await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const json = await res.json();
+    if (!json.ok) { errEl.textContent = json.error || 'เข้าสู่ระบบไม่สำเร็จ'; return; }
+    authToken = json.data.token; currentUser = { username:json.data.username, role:json.data.role, name:json.data.name };
+    localStorage.setItem('bs_token', authToken);
+    localStorage.setItem('bs_user', JSON.stringify(currentUser));
+    document.querySelector('.bottomnav')?.style.removeProperty('display');
+    const m = await api('/api/master'); master = m.data || {};
+    toast('ยินดีต้อนรับ '+(currentUser.name||currentUser.username));
+    renderPage('home');
+  } catch (e) { errEl.textContent = 'เชื่อมต่อไม่ได้'; }
+};
+window.logout = logout;
 
 // ── router ──
 function renderPage(page, params = {}) {
+  if (!currentUser) { renderLogin(); return; }
+  if (!allowedPage(page)) { toast('❌ ไม่มีสิทธิ์เข้าถึงหน้านี้','red'); page='home'; }
   currentPage = page;
   const app = document.getElementById('app');
   const pages = {
     home: pageHome,
+    userManagement: pageUserManagement,
     cleanMenu: pageCleanMenu,
     clean: pageClean,
     cleanNew: pageCleanNew,
@@ -55,6 +133,9 @@ function renderPage(page, params = {}) {
 }
 
 function updateBottomNav(page) {
+  document.querySelector('.bottomnav')?.style.removeProperty('display');
+  const navBlocks = document.getElementById('nav-blocks');
+  if (navBlocks) navBlocks.style.display = canViewTables() ? '' : 'none';
   document.querySelectorAll('.bottomnav button').forEach(b => b.classList.remove('active'));
   const map = { home: 'nav-home', cleanMenu: 'nav-home', clean: 'nav-home', press: 'nav-home', internal: 'nav-internal', external: 'nav-external', search: 'nav-search', blocks: 'nav-blocks' };
   const root = page.replace(/[A-Z].*/,'');
@@ -72,11 +153,22 @@ document.getElementById('app').insertAdjacentHTML('afterend', `
   <button id="nav-search" onclick="renderPage('search')"><span class="icon">🔍</span>ค้นหา</button>
   <button id="nav-blocks" onclick="renderPage('blocks')"><span class="icon">📋</span>ทะเบียน</button>
 </nav>`);
+if (!currentUser) document.querySelector('.bottomnav').style.display = 'none';
 
 // ── HOME ──
 function pageHome(app) {
   app.innerHTML = `
-    <div class="topnav"><h1>📦 BLOCK SCREEN</h1><small style="color:var(--muted)">${todayStr()}</small></div>
+    <div class="topnav"><h1 class="flex1">📦 BLOCK SCREEN</h1>
+      <div class="user-chip" onclick="toggleUserMenu()">
+        <span class="uc-avatar">${(currentUser?.name||'?').slice(0,1)}</span>
+        <span class="uc-name">${currentUser?.name||currentUser?.username||''}</span>
+        <span class="uc-role badge-role">${ROLE_LABEL[currentUser?.role]||''}</span>
+      </div>
+    </div>
+    <div id="userMenu" class="user-menu hidden">
+      ${canAdmin()?`<button onclick="renderPage('userManagement');toggleUserMenu()">👤 จัดการผู้ใช้</button>`:''}
+      <button onclick="logout()">🚪 ออกจากระบบ</button>
+    </div>
     <div class="home-grid">
       <div class="home-card" onclick="renderPage('cleanMenu')">
         <div class="hc-icon">🧹</div>
@@ -98,8 +190,14 @@ function pageHome(app) {
         <div class="hc-title">รับส่งภายนอก</div>
         <div class="hc-sub">ส่ง/รับบล็อกขึงผ้า</div>
       </div>
+      ${canViewTables()?`<div class="home-card" onclick="renderPage('blocks')">
+        <div class="hc-icon">📋</div>
+        <div class="hc-title">ทะเบียน / ข้อมูล</div>
+        <div class="hc-sub">ทะเบียนบล็อก · จัดการข้อมูล</div>
+      </div>`:''}
     </div>`;
 }
+window.toggleUserMenu = () => document.getElementById('userMenu')?.classList.toggle('hidden');
 
 // ══════════════════════════════════════════════════════
 //  MODULE 1 – ล้าง/โค๊ตบล็อก
@@ -117,12 +215,12 @@ function pageCleanMenu(app) {
           <button class="menu-btn menu-btn-primary" onclick="renderPage('cleanNew')"><span class="mb-ico">🧽</span><span>บันทึกล้าง/โค๊ต</span></button>
         </div>
       </div>
-      <div class="card">
+      ${canViewTables()?`<div class="card">
         <div class="card-title">ข้อมูล / รายงาน</div>
         <div class="menu-actions">
           <button class="menu-btn menu-btn-report" onclick="renderPage('clean')"><span class="mb-ico">📋</span><span>ตารางข้อมูล (DATA BASE 1)</span></button>
         </div>
-      </div>
+      </div>`:''}
     </div>`;
 }
 
@@ -149,24 +247,23 @@ async function pageClean(app) {
               ${steps.map(s=>`<th class="stepcol">${s.name}</th>`).join('')}
               <th>พนักงานคนที่ 1</th><th>พนักงานคนที่ 2</th><th>หมายเหตุ</th>
             </tr></thead>
-            <tbody>
-              ${rows.length===0
-                ? `<tr><td colspan="${cols}" class="no-data">ยังไม่มีรายการ — กด "+ เพิ่ม" เพื่อบันทึก</td></tr>`
-                : rows.map(r=>`<tr>
-                    <td><strong>${r.doc_no}</strong></td>
-                    <td>${fmtDate(r.date)}</td>
-                    <td><strong>${r.block_no||'-'}</strong></td>
-                    <td>${r.size_label||'-'}</td>
-                    ${steps.map(s=>`<td class="ctr">${r.process_step===s.name?'<span class="mark1">1</span>':'-'}</td>`).join('')}
-                    <td>${r.emp1_name||'-'}</td>
-                    <td>${r.emp2_name||'-'}</td>
-                    <td>${r.remarks||'-'}</td>
-                  </tr>`).join('')}
-            </tbody>
+            <tbody id="clean_tbody"></tbody>
           </table>
         </div>
+        <div class="pager" id="clean_pager"></div>
       </div>
     </div>`;
+
+  pagedTable(rows, r=>`<tr>
+      <td><strong>${r.doc_no}</strong></td>
+      <td>${fmtDate(r.date)}</td>
+      <td><strong>${r.block_no||'-'}</strong></td>
+      <td>${r.size_label||'-'}</td>
+      ${steps.map(s=>`<td class="ctr">${r.process_step===s.name?'<span class="mark1">1</span>':'-'}</td>`).join('')}
+      <td>${r.emp1_name||'-'}</td>
+      <td>${r.emp2_name||'-'}</td>
+      <td>${r.remarks||'-'}</td>
+    </tr>`, cols, 'clean_tbody', 'clean_pager');
 
   window.exportClean = () => {
     if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
@@ -272,7 +369,7 @@ function pageCleanNew(app) {
     };
     const { data } = await api('/api/clean','POST',body);
     toast(`บันทึกสำเร็จ ${data.count} รายการ (${data.doc_nos[0]} – ${data.doc_nos[data.doc_nos.length-1]})`);
-    renderPage('clean');
+    renderPage(canViewTables()?'clean':'cleanMenu');
   };
 }
 
@@ -909,7 +1006,7 @@ async function pagePressStore(app, {doc_no}) {
     if(!emp){toast('ระบุ/สแกนพนักงานผู้จัดเก็บ','red');return;}
     await api(`/api/press-store?doc_no=${encodeURIComponent(docNo)}`,'POST',{new_block_no:d.new_block_no,frame_size:$('st_frame').textContent,storage_location:loc,remarks:$('st_remark').value.trim()||null,storer_emp:emp,store_date:todayISO(),store_time:nowTime(),to_dept:$('st_dept').value});
     toast('จบขั้นตอนจัดเก็บ');
-    renderPage('pressDB3');
+    renderPage(canViewTables()?'pressDB3':'pressMenu');
   };
 }
 
@@ -956,12 +1053,12 @@ function pageInternal(app) {
           <button class="menu-btn" onclick="renderPage('internalReceive')"><span class="mb-ico">📦</span><span>ตรวจรับและจัดเก็บ</span></button>
         </div>
       </div>
-      <div class="card">
+      ${canViewTables()?`<div class="card">
         <div class="card-title">ข้อมูล / รายงาน</div>
         <div class="menu-actions">
           <button class="menu-btn menu-btn-report" onclick="renderPage('internalDatabase')"><span class="mb-ico">📋</span><span>ใบเบิกจ่ายบล็อก</span></button>
         </div>
-      </div>
+      </div>`:''}
     </div>`;
 }
 
@@ -978,18 +1075,20 @@ async function pageInternalDatabase(app) {
           <button class="btn-success btn-sm" onclick="exportIssueSlip()">⬇️ Excel</button>
         </div>
         <div class="table-scroll"><table class="db1"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-          <tbody>${rows.length? rows.map(r=>`<tr>
-            <td>${r.doc_date||'-'}</td><td><strong>${r.doc_no}</strong></td>
-            <td class="ctr"><strong>${r.block_no}</strong></td>
-            <td style="color:var(--red);font-weight:700">${r.internal_code||'-'}</td>
-            <td class="ctr"><strong>${r.from_dept||'-'}</strong></td><td>${r.sender||'-'}</td>
-            <td class="ctr">${r.revision||'-'}</td><td class="ctr">${r.color_order||'-'}</td>
-            <td>${r.receiver||'-'}</td><td class="ctr"><strong>${r.to_dept||'-'}</strong></td>
-            <td class="ctr"><strong>${r.storage_location||'-'}</strong></td><td>${r.remark||''}</td>
-          </tr>`).join('') : `<tr><td colspan="${cols.length}" class="no-data">ยังไม่มีรายการที่จัดเก็บ</td></tr>`}</tbody>
+          <tbody id="issue_tbody"></tbody>
         </table></div>
+        <div class="pager" id="issue_pager"></div>
       </div>
     </div>`;
+  pagedTable(rows, r=>`<tr>
+      <td>${r.doc_date||'-'}</td><td><strong>${r.doc_no}</strong></td>
+      <td class="ctr"><strong>${r.block_no}</strong></td>
+      <td style="color:var(--red);font-weight:700">${r.internal_code||'-'}</td>
+      <td class="ctr"><strong>${r.from_dept||'-'}</strong></td><td>${r.sender||'-'}</td>
+      <td class="ctr">${r.revision||'-'}</td><td class="ctr">${r.color_order||'-'}</td>
+      <td>${r.receiver||'-'}</td><td class="ctr"><strong>${r.to_dept||'-'}</strong></td>
+      <td class="ctr"><strong>${r.storage_location||'-'}</strong></td><td>${r.remark||''}</td>
+    </tr>`, cols.length, 'issue_tbody', 'issue_pager');
   window.exportIssueSlip = () => {
     if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
     const data = rows.map(r=>({
@@ -1281,7 +1380,7 @@ async function pageInternalStoreForm(app, {doc_no}) {
       date: todayISO(), time: nowTime(), locations: window._storeLoc,
     });
     toast('จบขั้นตอนตรวจรับและจัดเก็บ');
-    renderPage('internalDatabase');
+    renderPage(canViewTables()?'internalDatabase':'internal');
   };
 }
 
@@ -1348,7 +1447,7 @@ function pageExternalStretchSend(app) {
     };
     const { data } = await api('/api/stretch-send','POST',body);
     toast('ส่งบล็อกขึงผ้าสำเร็จ: '+data.doc_no);
-    renderPage('externalStretchSendResult',{doc_no:data.doc_no});
+    if (canViewTables()) renderPage('externalStretchSendResult',{doc_no:data.doc_no}); else renderPage('external');
   };
 }
 
@@ -1460,7 +1559,7 @@ function pageExternalStretchReceive(app) {
     };
     const { data } = await api('/api/stretch-receive','POST',body);
     toast('รับบล็อกขึงผ้าสำเร็จ: '+data.doc_no);
-    renderPage('externalStretchReceiveResult',{doc_no:data.doc_no});
+    if (canViewTables()) renderPage('externalStretchReceiveResult',{doc_no:data.doc_no}); else renderPage('external');
   };
 }
 
@@ -1741,6 +1840,7 @@ const MASTER_TABS = {
     fields:[{k:'id',l:'เบอร์ผ้า',pk:true}] },
 };
 let _mdTab = 'emp_related';
+let _mdRows = [], _mdQuery = '', _mdPage = 1;
 
 async function pageMasterData(app) {
   app.innerHTML = `
@@ -1758,8 +1858,8 @@ async function pageMasterData(app) {
   async function renderMdBody() {
     const cfg = MASTER_TABS[_mdTab];
     const { data: all } = await api('/api/master/'+cfg.table);
-    const rows = cfg.filter ? all.filter(cfg.filter) : all;
-    const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
+    _mdRows = cfg.filter ? all.filter(cfg.filter) : all;
+    _mdQuery = ''; _mdPage = 1;
     const inputFor = (f, val='') => f.type==='dept'
       ? `<select id="md_${f.k}">${master.departments.map(d=>`<option value="${d.id}" ${d.id===val?'selected':''}>${d.id}</option>`).join('')}</select>`
       : `<input id="md_${f.k}" type="${f.type==='number'?'number':'text'}" value="${val==null?'':val}" placeholder="${f.l}"/>`;
@@ -1772,23 +1872,40 @@ async function pageMasterData(app) {
         </div>
       </div>
       <div class="card">
-        <div class="card-title">${cfg.label} (<span id="md_count">${rows.length}</span>)</div>
+        <div class="card-title">${cfg.label} (<span id="md_count">${_mdRows.length}</span>)</div>
         <div class="row gap-sm mb">
           <input id="md_search" class="flex1" placeholder="🔍 ค้นหา..." oninput="mdFilter(this.value)"/>
           <button class="btn-secondary btn-sm" onclick="$('md_search').value='';mdFilter('')">ล้าง</button>
         </div>
         <div class="table-scroll"><table>
           <thead><tr>${cfg.fields.map(f=>`<th>${f.l}</th>`).join('')}<th></th></tr></thead>
-          <tbody id="md_tbody">${rows.length?rows.map(r=>`<tr data-s="${cfg.fields.map(f=>r[f.k]==null?'':r[f.k]).join(' ').toLowerCase().replace(/"/g,'&quot;')}">
-            ${cfg.fields.map(f=>`<td>${r[f.k]==null?'-':r[f.k]}</td>`).join('')}
-            <td><div class="row gap-sm" style="justify-content:flex-end">
-              <button class="btn-sm btn-secondary" onclick='mdEdit(${JSON.stringify(r).replace(/'/g,"&#39;")})'>แก้ไข</button>
-              <button class="btn-sm btn-danger" onclick="mdDel('${r[cfg.pk]}')">ลบ</button>
-            </div></td></tr>`).join(''):`<tr><td colspan="${cfg.fields.length+1}" class="no-data">ยังไม่มีข้อมูล</td></tr>`}
-          </tbody>
+          <tbody id="md_tbody"></tbody>
         </table></div>
+        <div class="pager" id="md_pager"></div>
       </div>`;
+    paintMd();
   }
+
+  function paintMd() {
+    const cfg = MASTER_TABS[_mdTab];
+    const q = _mdQuery.trim().toLowerCase();
+    const list = q ? _mdRows.filter(r=>cfg.fields.map(f=>r[f.k]==null?'':r[f.k]).join(' ').toLowerCase().includes(q)) : _mdRows;
+    const pages = Math.max(1, Math.ceil(list.length/10));
+    if (_mdPage>pages) _mdPage = pages;
+    const slice = list.slice((_mdPage-1)*10, (_mdPage-1)*10+10);
+    $('md_count').textContent = list.length;
+    $('md_tbody').innerHTML = slice.length ? slice.map(r=>`<tr>
+      ${cfg.fields.map(f=>`<td>${r[f.k]==null?'-':r[f.k]}</td>`).join('')}
+      <td><div class="row gap-sm" style="justify-content:flex-end">
+        <button class="btn-sm btn-secondary" onclick='mdEdit(${JSON.stringify(r).replace(/'/g,"&#39;")})'>แก้ไข</button>
+        <button class="btn-sm btn-danger" onclick="mdDel('${r[cfg.pk]}')">ลบ</button>
+      </div></td></tr>`).join('') : `<tr><td colspan="${cfg.fields.length+1}" class="no-data">ไม่พบข้อมูล</td></tr>`;
+    $('md_pager').innerHTML = `
+      <button class="btn-sm btn-secondary" ${_mdPage<=1?'disabled':''} onclick="mdGo(${_mdPage-1})">‹ ก่อนหน้า</button>
+      <span class="pager-info">หน้า ${_mdPage} / ${pages} · ${list.length} รายการ</span>
+      <button class="btn-sm btn-secondary" ${_mdPage>=pages?'disabled':''} onclick="mdGo(${_mdPage+1})">ถัดไป ›</button>`;
+  }
+  window.mdGo = (p) => { _mdPage = p; paintMd(); };
 
   function collect(prefix='md_') {
     const cfg = MASTER_TABS[_mdTab];
@@ -1796,16 +1913,7 @@ async function pageMasterData(app) {
     cfg.fields.forEach(f=>{ const el=$(prefix+f.k); if(el) body[f.k]=el.value.trim?el.value.trim():el.value; });
     return body;
   }
-  window.mdFilter = (q) => {
-    q = (q||'').trim().toLowerCase();
-    let shown = 0;
-    document.querySelectorAll('#md_tbody tr').forEach(tr => {
-      const hit = !q || (tr.dataset.s||'').includes(q);
-      tr.style.display = hit ? '' : 'none';
-      if (hit) shown++;
-    });
-    const c = $('md_count'); if (c) c.textContent = shown;
-  };
+  window.mdFilter = (q) => { _mdQuery = q||''; _mdPage = 1; paintMd(); };
   window.mdAdd = async () => {
     const cfg = MASTER_TABS[_mdTab];
     const body = collect();
@@ -1849,6 +1957,60 @@ async function pageMasterData(app) {
     await api('/api/master/'+cfg.table+'/'+encodeURIComponent(id),'DELETE');
     if (cfg.table==='employees') { const m=await api('/api/master'); master=m.data; }
     toast('ลบแล้ว'); await renderMdBody();
+  };
+}
+
+// ══════════════════════════════════════════════════════
+//  USER MANAGEMENT (administrator only)
+// ══════════════════════════════════════════════════════
+async function pageUserManagement(app) {
+  const { data: users } = await api('/api/users');
+  const roleOpts = (sel='employee') => ['administrator','supervisor','employee'].map(r=>`<option value="${r}" ${r===sel?'selected':''}>${ROLE_LABEL[r]} (${r})</option>`).join('');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('home')">‹</button><h1>👤 จัดการผู้ใช้</h1></div>
+    <div class="page">
+      <div class="card">
+        <div class="card-title">➕ เพิ่ม / แก้ไขผู้ใช้</div>
+        <div class="md-form">
+          <div class="md-field"><label>ชื่อผู้ใช้ <span class="req">*</span></label><input id="us_username" placeholder="username"/></div>
+          <div class="md-field"><label>ชื่อ-สกุล</label><input id="us_name" placeholder="ชื่อที่แสดง"/></div>
+          <div class="md-field"><label>รหัสผ่าน</label><input id="us_password" type="password" placeholder="รหัสผ่าน"/></div>
+          <div class="md-field"><label>สิทธิ์</label><select id="us_role">${roleOpts()}</select></div>
+          <button class="btn-primary" style="align-self:end" onclick="saveUser()">บันทึก</button>
+        </div>
+        <p class="scan-hint" style="margin-top:.5rem">* เพิ่มผู้ใช้ใหม่ต้องระบุรหัสผ่าน · แก้ไขผู้ใช้เดิม เว้นรหัสผ่านว่างไว้ถ้าไม่เปลี่ยน</p>
+      </div>
+      <div class="card">
+        <div class="card-title">รายชื่อผู้ใช้ (${users.length})</div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>สิทธิ์</th><th></th></tr></thead>
+          <tbody>${users.map(u=>`<tr>
+            <td><strong>${u.username}</strong></td><td>${u.name||'-'}</td>
+            <td><span class="badge ${u.role==='administrator'?'badge-red':u.role==='supervisor'?'badge-yellow':'badge-blue'}">${ROLE_LABEL[u.role]||u.role}</span></td>
+            <td><div class="row gap-sm" style="justify-content:flex-end">
+              <button class="btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u).replace(/'/g,"&#39;")})'>แก้ไข</button>
+              <button class="btn-sm btn-danger" onclick="delUser('${u.username}')">ลบ</button>
+            </div></td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+  window.editUser = (u) => {
+    $('us_username').value = u.username; $('us_username').setAttribute('readonly','');
+    $('us_name').value = u.name||''; $('us_password').value=''; $('us_role').value=u.role;
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  window.saveUser = async () => {
+    const body = { username:$('us_username').value.trim(), name:$('us_name').value.trim(),
+      password:$('us_password').value, role:$('us_role').value, dept_id:'BL' };
+    if (!body.username) { toast('กรุณาระบุชื่อผู้ใช้','red'); return; }
+    try { await api('/api/users','POST',body); toast('บันทึกผู้ใช้แล้ว'); renderPage('userManagement'); }
+    catch(e){ toast(e.message,'red'); }
+  };
+  window.delUser = async (username) => {
+    if (username===currentUser.username) { toast('ลบบัญชีตัวเองไม่ได้','red'); return; }
+    if (!confirm('ลบผู้ใช้ '+username+' ?')) return;
+    try { await api('/api/users/'+encodeURIComponent(username),'DELETE'); toast('ลบแล้ว'); renderPage('userManagement'); }
+    catch(e){ toast(e.message,'red'); }
   };
 }
 
@@ -2166,8 +2328,10 @@ function $(id) { return document.getElementById(id); }
 
 async function api(url, method = 'GET', body = null) {
   const opts = { method, headers: {} };
+  if (authToken) opts.headers['Authorization'] = 'Bearer ' + authToken;
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   const res = await fetch(url, opts);
+  if (res.status === 401) { logout(); throw new Error('กรุณาเข้าสู่ระบบใหม่'); }
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'เกิดข้อผิดพลาด');
   return json;
@@ -2241,6 +2405,25 @@ function styledXlsx(rows, sheetName, fileName) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, fileName);
+}
+
+// ── ตัวช่วยแบ่งหน้า 10 รายการ/หน้า (ใช้ร่วมกันทุกตาราง) ──
+function pagedTable(rows, renderRow, colspan, tbodyId, pagerId, size = 10) {
+  let page = 1;
+  const paint = () => {
+    const pages = Math.max(1, Math.ceil(rows.length / size));
+    if (page > pages) page = pages;
+    const slice = rows.slice((page-1)*size, (page-1)*size + size);
+    const tb = document.getElementById(tbodyId); if (!tb) return;
+    tb.innerHTML = slice.length ? slice.map(renderRow).join('') : `<tr><td colspan="${colspan}" class="no-data">ไม่มีข้อมูล</td></tr>`;
+    const pg = document.getElementById(pagerId);
+    if (pg) pg.innerHTML = `
+      <button class="btn-sm btn-secondary" ${page<=1?'disabled':''} onclick="__pg_${tbodyId}(${page-1})">‹ ก่อนหน้า</button>
+      <span class="pager-info">หน้า ${page} / ${pages} · ${rows.length} รายการ</span>
+      <button class="btn-sm btn-secondary" ${page>=pages?'disabled':''} onclick="__pg_${tbodyId}(${page+1})">ถัดไป ›</button>`;
+  };
+  window['__pg_'+tbodyId] = (p) => { page = p; paint(); };
+  paint();
 }
 
 function toast(msg, type = 'ok') {

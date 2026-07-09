@@ -1,5 +1,5 @@
 import initSqlJs from 'sql.js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash, createHmac } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -69,6 +69,10 @@ CREATE TABLE IF NOT EXISTS block_sizes (id INTEGER PRIMARY KEY AUTOINCREMENT, la
 CREATE TABLE IF NOT EXISTS fabric_types (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS process_steps (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, step_order INTEGER);
 CREATE TABLE IF NOT EXISTS problems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
+CREATE TABLE IF NOT EXISTS users (
+  username TEXT PRIMARY KEY, pass_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'employee',
+  name TEXT, dept_id TEXT, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS blocks (
   block_no TEXT PRIMARY KEY, size_label TEXT, fabric_no TEXT,
   status TEXT DEFAULT 'available', location TEXT, current_dept TEXT DEFAULT 'BL', updated_at TEXT
@@ -143,6 +147,76 @@ try { getDb().run('ALTER TABLE internal_docs ADD COLUMN prep_emp TEXT'); } catch
 try { getDb().run('ALTER TABLE internal_docs ADD COLUMN transport_emp TEXT'); } catch {}
 try { getDb().run('ALTER TABLE internal_docs ADD COLUMN store_emp TEXT'); } catch {}
 save();
+
+// ── Authentication / Users ──
+const AUTH_SECRET = process.env.AUTH_SECRET || 'blockscreen-doit-secret-2026';
+function hashPw(username, password) {
+  return createHash('sha256').update(`${username}:${password}:${AUTH_SECRET}`).digest('hex');
+}
+// Seed default accounts (only if users table empty)
+if (!get('SELECT 1 FROM users LIMIT 1')) {
+  const ts = now();
+  const seedUsers = [
+    ['admin', 'admin123', 'administrator', 'ผู้ดูแลระบบ'],
+    ['supervisor', 'super123', 'supervisor', 'หัวหน้างาน'],
+    ['employee', 'emp123', 'employee', 'พนักงาน'],
+  ];
+  seedUsers.forEach(([u, p, r, n]) =>
+    getDb().run('INSERT INTO users(username,pass_hash,role,name,dept_id,created_at) VALUES(?,?,?,?,?,?)',
+      [u, hashPw(u, p), r, n, 'BL', ts]));
+  save();
+}
+const b64url = s => Buffer.from(s).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+export function makeToken(user) {
+  const payload = JSON.stringify({ u: user.username, r: user.role, n: user.name, exp: Date.now() + 30*24*3600*1000 });
+  const body = b64url(payload);
+  const sig = b64url(createHmac('sha256', AUTH_SECRET).update(body).digest('base64'));
+  return `${body}.${sig}`;
+}
+export function verifyToken(token) {
+  if (!token || token.indexOf('.') < 0) return null;
+  const [body, sig] = token.split('.');
+  const expect = b64url(createHmac('sha256', AUTH_SECRET).update(body).digest('base64'));
+  if (sig !== expect) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body.replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf-8'));
+    if (p.exp && Date.now() > p.exp) return null;
+    return { username: p.u, role: p.r, name: p.n };
+  } catch { return null; }
+}
+export function login(username, password) {
+  const u = get('SELECT * FROM users WHERE username=?', [String(username||'').trim()]);
+  if (!u || u.pass_hash !== hashPw(u.username, password)) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  const user = { username: u.username, role: u.role, name: u.name, dept_id: u.dept_id };
+  return { ...user, token: makeToken(user) };
+}
+export function listUsers() {
+  return all('SELECT username, role, name, dept_id, created_at FROM users ORDER BY role, username');
+}
+export function upsertUser(data) {
+  const username = String(data.username||'').trim();
+  if (!username) throw new Error('กรุณาระบุชื่อผู้ใช้');
+  const role = ['administrator','supervisor','employee'].includes(data.role) ? data.role : 'employee';
+  const exists = get('SELECT username FROM users WHERE username=?', [username]);
+  if (exists) {
+    if (data.password) run('UPDATE users SET pass_hash=?, role=?, name=?, dept_id=? WHERE username=?',
+      [hashPw(username, data.password), role, data.name||null, data.dept_id||null, username]);
+    else run('UPDATE users SET role=?, name=?, dept_id=? WHERE username=?',
+      [role, data.name||null, data.dept_id||null, username]);
+  } else {
+    if (!data.password) throw new Error('กรุณาระบุรหัสผ่านสำหรับผู้ใช้ใหม่');
+    run('INSERT INTO users(username,pass_hash,role,name,dept_id,created_at) VALUES(?,?,?,?,?,?)',
+      [username, hashPw(username, data.password), role, data.name||null, data.dept_id||null, now()]);
+  }
+  return listUsers();
+}
+export function deleteUser(username) {
+  if (get('SELECT COUNT(*) c FROM users WHERE role=?', ['administrator']).c <= 1 &&
+      get('SELECT role FROM users WHERE username=?', [username])?.role === 'administrator')
+    throw new Error('ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน');
+  run('DELETE FROM users WHERE username=?', [username]);
+  return listUsers();
+}
 
 // ── Seed master data (from Excel: 79f768a7-...Mobile_barcode_BL2.1.xlsx) ──
 if (!get('SELECT 1 FROM departments LIMIT 1')) {

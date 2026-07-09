@@ -15,6 +15,7 @@ import {
   searchByBlockNo, searchByInternalCode, searchExternalPending,
   bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock, updateBlock,
   listMaster, masterUpsert, masterDelete,
+  login, verifyToken, listUsers, upsertUser, deleteUser,
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,30 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const ok = (res, data) => res.json({ ok: true, data });
 const err = (res, msg, code = 400) => res.status(code).json({ ok: false, error: msg });
 const wrap = fn => async (req, res) => { try { await fn(req, res); } catch (e) { err(res, e.message); } };
+
+// ---------- AUTH ----------
+app.use((req, res, next) => {
+  const h = req.headers.authorization || '';
+  req.user = h.startsWith('Bearer ') ? verifyToken(h.slice(7)) : null;
+  next();
+});
+const requireRole = (...roles) => (req, res, next) => {
+  if (!req.user) return err(res, 'กรุณาเข้าสู่ระบบ', 401);
+  if (!roles.includes(req.user.role)) return err(res, 'ไม่มีสิทธิ์เข้าถึง', 403);
+  next();
+};
+app.post('/api/login', wrap((req, res) => {
+  const { username, password } = req.body || {};
+  ok(res, login(username, password));
+}));
+app.get('/api/me', wrap((req, res) => {
+  if (!req.user) return err(res, 'ไม่ได้เข้าสู่ระบบ', 401);
+  ok(res, req.user);
+}));
+// User management (administrator only)
+app.get('/api/users', requireRole('administrator'), wrap((req, res) => ok(res, listUsers())));
+app.post('/api/users', requireRole('administrator'), wrap((req, res) => ok(res, upsertUser(req.body || {}))));
+app.delete('/api/users/:username', requireRole('administrator'), wrap((req, res) => ok(res, deleteUser(req.params.username))));
 
 // ---------- MASTER DATA ----------
 app.get('/api/master', wrap((req, res) => ok(res, getMasterData())));
@@ -45,8 +70,8 @@ app.post('/api/block', wrap((req, res) => {
   ok(res, addBlock(block_no, size_label, fabric_no));
 }));
 app.get('/api/blocks', wrap((req, res) => ok(res, listBlocks())));
-app.put('/api/block/:no', wrap((req, res) => ok(res, updateBlock(req.params.no, req.body || {}))));
-app.delete('/api/block/:no', wrap((req, res) => ok(res, deleteBlock(req.params.no))));
+app.put('/api/block/:no', requireRole('administrator','supervisor'), wrap((req, res) => ok(res, updateBlock(req.params.no, req.body || {}))));
+app.delete('/api/block/:no', requireRole('administrator','supervisor'), wrap((req, res) => ok(res, deleteBlock(req.params.no))));
 
 // ---------- EXCEL IMPORT (bulk upsert) ----------
 app.post('/api/import/blocks', wrap((req, res) => ok(res, bulkUpsertBlocks(req.body?.rows || []))));
@@ -62,8 +87,8 @@ app.get('/api/qr/:text', async (req, res) => {
 
 // ---------- MASTER DATA CRUD ----------
 app.get('/api/master/:table', wrap((req, res) => ok(res, listMaster(req.params.table))));
-app.post('/api/master/:table', wrap((req, res) => ok(res, masterUpsert(req.params.table, req.body || {}))));
-app.delete('/api/master/:table/:id', wrap((req, res) => ok(res, masterDelete(req.params.table, req.params.id))));
+app.post('/api/master/:table', requireRole('administrator','supervisor'), wrap((req, res) => ok(res, masterUpsert(req.params.table, req.body || {}))));
+app.delete('/api/master/:table/:id', requireRole('administrator','supervisor'), wrap((req, res) => ok(res, masterDelete(req.params.table, req.params.id))));
 
 // ---------- MODULE 1: CLEAN / COAT ----------
 app.get('/api/clean', wrap((req, res) => ok(res, listCleanDocs())));
