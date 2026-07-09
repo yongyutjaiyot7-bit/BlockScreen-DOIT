@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
+import { existsSync } from 'node:fs';
 
 import {
   getEmployee, getBlock, getMasterData, addBlock, listBlocks,
@@ -22,7 +23,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const APK_PATH = path.join(PUBLIC_DIR, 'blockscreen.apk');
+// ดาวน์โหลดไฟล์ติดตั้ง Android (APK) — ถ้ายังไม่ได้อัปโหลดไฟล์ จะแจ้งวิธีสร้าง
+app.get(['/blockscreen.apk', '/app.apk'], (req, res) => {
+  if (existsSync(APK_PATH)) {
+    res.type('application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="BlockScreen.apk"');
+    return res.sendFile(APK_PATH);
+  }
+  res.status(404).type('html').send(`<meta charset="utf-8"><body style="font-family:sans-serif;padding:2rem;max-width:600px;margin:auto">
+    <h2>ยังไม่มีไฟล์ติดตั้ง (APK)</h2>
+    <p>ผู้ดูแลระบบยังไม่ได้อัปโหลดไฟล์ <code>blockscreen.apk</code> ลงในโฟลเดอร์ <code>public/</code></p>
+    <p>ระหว่างนี้กรุณาใช้งานผ่านเว็บเบราว์เซอร์ได้ที่ <a href="/">หน้าหลัก</a></p></body>`);
+});
+app.get('/install', (req, res) => res.redirect('/install.html'));
+
+app.use(express.static(PUBLIC_DIR));
 
 const ok = (res, data) => res.json({ ok: true, data });
 const err = (res, msg, code = 400) => res.status(code).json({ ok: false, error: msg });

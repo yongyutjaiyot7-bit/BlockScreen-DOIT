@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ติดตั้งแอป BLOCK SCREEN</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:"Noto Sans Thai","Sarabun","Segoe UI",system-ui,sans-serif;color:#111827;
+    background:radial-gradient(1000px 500px at 10% -10%,rgba(99,102,241,.15),transparent 60%),
+    linear-gradient(170deg,#f6f8fc,#eef1f8);min-height:100vh;padding:1.4rem;display:flex;
+    align-items:center;justify-content:center}
+  .card{width:100%;max-width:440px;background:#fff;border:1px solid #e8ebf3;border-radius:22px;
+    padding:1.8rem 1.5rem;box-shadow:0 20px 40px -12px rgba(79,70,229,.25)}
+  .logo{font-size:2.6rem;width:80px;height:80px;margin:0 auto .7rem;display:flex;align-items:center;
+    justify-content:center;border-radius:22px;background:linear-gradient(135deg,#4f46e5,#0ea5e9);
+    box-shadow:0 12px 26px -8px rgba(79,70,229,.6)}
+  h1{text-align:center;font-size:1.5rem;font-weight:900;letter-spacing:.5px;
+    background:linear-gradient(120deg,#4f46e5,#0ea5e9);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{text-align:center;color:#6b7280;font-size:.85rem;margin-bottom:1.3rem}
+  .btn{display:block;width:100%;text-align:center;text-decoration:none;padding:1rem;border-radius:14px;
+    font-weight:800;font-size:1.1rem;color:#fff;background:linear-gradient(120deg,#4f46e5,#6366f1,#0ea5e9);
+    box-shadow:0 10px 24px -6px rgba(79,70,229,.5);margin-bottom:.7rem}
+  .btn:active{transform:scale(.97)}
+  .btn-alt{background:#f1f3fa;color:#374151;box-shadow:none;font-size:1rem}
+  .qr{text-align:center;margin:1rem 0 .4rem}
+  .qr img{width:190px;height:190px;border:8px solid #fff;border-radius:14px;box-shadow:0 6px 18px rgba(17,24,39,.12);background:#fff}
+  .qr-cap{text-align:center;color:#6b7280;font-size:.78rem;margin-bottom:1rem}
+  .steps{background:#f7f9ff;border:1px solid #e8ebf3;border-radius:14px;padding:1rem 1.1rem;margin-top:.6rem}
+  .steps h3{font-size:.95rem;margin-bottom:.6rem;color:#4f46e5}
+  .steps ol{margin-left:1.1rem;font-size:.86rem;line-height:1.9;color:#374151}
+  .note{font-size:.76rem;color:#9ca3af;text-align:center;margin-top:1rem;line-height:1.6}
+  .badge{display:inline-block;background:#fee2e2;color:#9f1239;font-weight:700;font-size:.7rem;
+    padding:.2rem .6rem;border-radius:99px;margin-bottom:.5rem}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">📦</div>
+    <h1>BLOCK SCREEN</h1>
+    <div class="sub">ระบบจัดการบล็อกสกรีน · บริษัท ดูอิท จำกัด</div>
+
+    <a class="btn" href="/blockscreen.apk" download>⬇️ ดาวน์โหลด &amp; ติดตั้งแอป (Android)</a>
+    <a class="btn btn-alt" href="/">🌐 เปิดใช้งานบนเว็บเบราว์เซอร์</a>
+
+    <div class="qr"><img id="qr" alt="QR ติดตั้ง"/></div>
+    <div class="qr-cap">ให้เพื่อนสแกน QR นี้เพื่อเข้าหน้าติดตั้ง</div>
+
+    <div class="steps">
+      <h3>วิธีติดตั้งบน Android</h3>
+      <ol>
+        <li>กดปุ่ม <b>"ดาวน์โหลด &amp; ติดตั้งแอป"</b> ด้านบน</li>
+        <li>เมื่อดาวน์โหลดเสร็จ เปิดไฟล์ <b>blockscreen.apk</b></li>
+        <li>หากขึ้นเตือน ให้กด <b>"ตั้งค่า"</b> แล้วเปิด <b>"อนุญาตติดตั้งจากแหล่งนี้"</b></li>
+        <li>กลับมากด <b>"ติดตั้ง" (Install)</b></li>
+        <li>เปิดแอป แล้วเข้าสู่ระบบด้วยชื่อผู้ใช้ที่ได้รับ</li>
+      </ol>
+    </div>
+
+    <div class="note">
+      * แอปเชื่อมต่อฐานข้อมูลเดียวกับระบบส่วนกลางแบบเรียลไทม์<br/>
+      หากยังไม่มีไฟล์ APK ให้ใช้ปุ่ม "เปิดใช้งานบนเว็บเบราว์เซอร์" ไปก่อน
+    </div>
+  </div>
+  <script>
+    // QR code ของหน้านี้ (ใช้บริการสร้าง QR ในระบบเดียวกัน)
+    var url = location.origin + '/install.html';
+    document.getElementById('qr').src = '/api/qr/' + encodeURIComponent(url);
+  </script>
+</body>
+</html>

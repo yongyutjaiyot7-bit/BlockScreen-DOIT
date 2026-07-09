@@ -66,6 +66,7 @@ function renderLogin() {
         <div class="form-group"><label>รหัสผ่าน</label><input id="lg_pass" type="password" placeholder="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
         <button class="btn-primary" style="width:100%;padding:.85rem;font-size:1.05rem" onclick="doLogin()">เข้าสู่ระบบ</button>
         <div id="lg_err" class="login-err"></div>
+        <a class="login-install" href="/install.html">📲 ติดตั้งแอปบนมือถือ (Android)</a>
       </div>
     </div>`;
   setTimeout(()=>document.getElementById('lg_user')?.focus(), 100);

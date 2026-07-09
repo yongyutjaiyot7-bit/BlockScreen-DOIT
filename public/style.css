@@ -351,6 +351,8 @@ tr.row-red td{background:var(--red-soft)!important;}
 .login-sub{font-size:.8rem;color:var(--muted);margin-bottom:1.4rem;}
 .login-card .form-group{text-align:left;}
 .login-err{color:var(--red);font-size:.85rem;font-weight:700;margin-top:.7rem;min-height:1em;}
+.login-install{display:block;margin-top:1rem;padding:.7rem;border-radius:12px;background:var(--accent-soft);
+  color:var(--brand);font-weight:800;font-size:.9rem;text-decoration:none;border:1px solid var(--brand3);}
 
 /* ===================== USER CHIP / MENU ===================== */
 .user-chip{display:flex;align-items:center;gap:.4rem;cursor:pointer;background:rgba(255,255,255,.18);
