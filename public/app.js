@@ -2,6 +2,9 @@
    BLOCK SCREEN – Single-Page App
    ============================================================ */
 
+// ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
+const APP_VERSION = 'v2026.07.09-auth';
+
 // ── state ──
 let master = {};
 let currentPage = 'home';
@@ -67,6 +70,7 @@ function renderLogin() {
         <button class="btn-primary" style="width:100%;padding:.85rem;font-size:1.05rem" onclick="doLogin()">เข้าสู่ระบบ</button>
         <div id="lg_err" class="login-err"></div>
         <a class="login-install" href="/install.html">📲 ติดตั้งแอปบนมือถือ (Android)</a>
+        <div class="login-version">${APP_VERSION}</div>
       </div>
     </div>`;
   setTimeout(()=>document.getElementById('lg_user')?.focus(), 100);
@@ -666,62 +670,80 @@ async function pagePressDetail(app, {doc_no}) {
   const { data: d } = await api(`/api/press-doc?doc_no=${encodeURIComponent(doc_no)}`);
   const canInspect = d.status === 'pending' || d.status === 'inspected';
   const canStore = d.status === 'inspected' && !d.storage;
+  const stMap = {
+    pending:   {t:'รอดำเนินการ', c:'st-amber',  ic:'⏳'},
+    inspected: {t:'ตรวจรับแล้ว', c:'st-blue',   ic:'🔍'},
+    stored:    {t:'จัดเก็บแล้ว', c:'st-green',   ic:'✅'},
+  };
+  const st = stMap[d.status] || {t:d.status, c:'st-gray', ic:'📄'};
+  const stepN = d.status==='stored'?4 : d.status==='inspected'?3 : 2;
+  const pill = (l,v,accent='') => `<div class="dt-pill ${accent}"><span class="dt-l">${l}</span><span class="dt-v">${v}</span></div>`;
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('press')">‹</button>
-      <h1>รายละเอียดร้องขออัดบล็อก</h1>
+      <h1>รายละเอียดคำร้อง</h1>
     </div>
     <div class="page">
-      <div class="steps">
-        <div class="step done">1.ร้องขอ</div>
-        <div class="step ${d.status!=='pending'?'done':'active'}">2.บล็อกรออัด</div>
-        <div class="step ${d.status==='stored'?'done':d.status==='inspected'?'done':''}">3.ตรวจรับ</div>
-        <div class="step ${d.status==='stored'?'active':''}">4.จัดเก็บ</div>
+      <div class="dt-hero ${st.c}">
+        <div class="dt-hero-glow"></div>
+        <div class="dt-hero-top">
+          <div>
+            <div class="dt-doc">${d.doc_no}</div>
+            <div class="dt-date">📅 ${d.date} · ${d.time} น.</div>
+          </div>
+          <span class="dt-status">${st.ic} ${st.t}</span>
+        </div>
+        <div class="dt-blockflow">
+          <div class="dt-bf-item"><span class="dt-bf-l">บล็อกเดิม</span><span class="dt-bf-v">${d.old_block_no||'-'}</span></div>
+          <span class="dt-bf-arrow">→</span>
+          <div class="dt-bf-item"><span class="dt-bf-l">บล็อกใหม่</span><span class="dt-bf-v">${d.new_block_no||'—'}</span></div>
+        </div>
       </div>
 
+      ${stepperHtml(stepN, ['ร้องขอ','รออัด','ตรวจรับ','จัดเก็บ'])}
+
       <div class="card">
-        <div class="card-title">${d.doc_no}</div>
-        <div class="grid2">
-          ${infoRow('วันที่',d.date)} ${infoRow('เวลา',d.time)}
-          ${infoRow('หน่วยงาน',d.dept)} ${infoRow('สถานะ',d.status)}
-          ${infoRow('บล็อกเดิม',d.old_block_no)} ${infoRow('บล็อกใหม่',d.new_block_no||'-')}
-          ${infoRow('ปัญหา',d.problem_type||'-')}
+        <div class="card-title">ข้อมูลคำร้อง</div>
+        <div class="dt-grid">
+          ${pill('หน่วยงาน', d.dept||'-')}
+          ${pill('ปัญหา', d.problem_type||'-', 'dt-warn')}
         </div>
-        ${d.remarks?`<p style="color:var(--muted);font-size:.82rem">หมายเหตุ: ${d.remarks}</p>`:''}
+        ${d.remarks?`<div class="dt-remark">📝 ${d.remarks}</div>`:''}
       </div>
 
       ${d.films.length?`
       <div class="card">
-        <div class="card-title">ฟิล์ม</div>
-        <div class="film-row film-header" style="font-size:.7rem"><span>รหัสภายใน</span><span>สี</span><span>Rev</span><span>เบอร์ผ้า</span><span></span></div>
-        ${d.films.map(f=>`<div class="film-row"><span>${f.internal_code}</span><span>${f.color_order}</span><span>${f.revision}</span><span>${f.fabric_no}</span><span></span></div>`).join('')}
+        <div class="card-title">🎞️ ฟิล์ม (${d.films.length})</div>
+        <div class="table-scroll"><table class="filmtbl">
+          <thead><tr><th>รหัสภายใน</th><th>สี</th><th>Rev</th><th>เบอร์ผ้า</th></tr></thead>
+          <tbody>${d.films.map(f=>`<tr><td><strong>${f.internal_code||'-'}</strong></td><td class="ctr">${f.color_order||'-'}</td><td class="ctr">${f.revision||'-'}</td><td>${f.fabric_no||'-'}</td></tr>`).join('')}</tbody>
+        </table></div>
       </div>`:''}
 
       ${d.inspections.length?`
       <div class="card">
-        <div class="card-title">ผลการตรวจรับ (${d.inspections.length} ครั้ง)</div>
+        <div class="card-title">🔍 ผลการตรวจรับ (${d.inspections.length} ครั้ง)</div>
         ${d.inspections.map(ins=>`
-          <div class="history-entry">
-            <strong>ครั้งที่ ${ins.version}</strong> – ${ins.insp_date} ${ins.insp_time||''}<br/>
-            บล็อกใหม่: ${ins.new_block_no||'-'} · ความตึง: ${ins.tension_value||'-'} N/cm
-            <span class="badge ${ins.tension_pass?'badge-green':'badge-red'}">${ins.tension_pass?'ผ่าน':'ไม่ผ่าน'}</span>
+          <div class="dt-insp">
+            <div class="dt-insp-head"><span class="dt-insp-ver">ครั้งที่ ${ins.version}</span><span class="badge ${ins.tension_pass?'badge-green':'badge-red'}">${ins.tension_pass?'✓ ผ่าน':'✗ ไม่ผ่าน'}</span></div>
+            <div class="dt-insp-body">📅 ${ins.insp_date||'-'} ${ins.insp_time||''} · บล็อกใหม่ <b>${ins.new_block_no||'-'}</b> · ความตึง <b>${ins.tension_value||'-'}</b> N/cm</div>
           </div>`).join('')}
       </div>`:''}
 
       ${d.storage?`
       <div class="card">
-        <div class="card-title">ข้อมูลจัดเก็บ</div>
-        <div class="grid2">
-          ${infoRow('บล็อกใหม่',d.storage.new_block_no||'-')}
-          ${infoRow('ที่จัดเก็บ',d.storage.storage_location||'-')}
-          ${infoRow('ผู้จัดเก็บ',d.storage.storer_emp||'-')}
-          ${infoRow('วันที่',d.storage.store_date||'-')}
+        <div class="card-title">📦 ข้อมูลจัดเก็บ</div>
+        <div class="dt-grid">
+          ${pill('บล็อกใหม่', d.storage.new_block_no||'-')}
+          ${pill('ที่จัดเก็บ', d.storage.storage_location||'-', 'dt-ok')}
+          ${pill('ผู้จัดเก็บ', d.storage.storer_emp||'-')}
+          ${pill('วันที่', d.storage.store_date||'-')}
         </div>
       </div>`:''}
 
-      <div class="col gap" style="gap:.5rem">
-        ${canInspect?`<button class="btn-primary" onclick="renderPage('pressInspect',{doc_no:'${doc_no}'})">📝 บันทึกตรวจรับ (ขั้นตอน 3)</button>`:''}
-        ${canStore?`<button class="btn-success" onclick="renderPage('pressStore',{doc_no:'${doc_no}'})">📦 จัดเก็บ (ขั้นตอน 4)</button>`:''}
+      <div class="col gap" style="gap:.6rem">
+        ${canInspect?`<button class="btn-primary" style="padding:.9rem;font-size:1.02rem" onclick="renderPage('pressInspect',{doc_no:'${doc_no}'})">🔍 บันทึกตรวจรับ (ขั้นตอน 3)</button>`:''}
+        ${canStore?`<button class="btn-success" style="padding:.9rem;font-size:1.02rem" onclick="renderPage('pressStore',{doc_no:'${doc_no}'})">📦 จัดเก็บ (ขั้นตอน 4)</button>`:''}
       </div>
     </div>`;
 }
@@ -2246,14 +2268,15 @@ function closeScan() {
 
 function scanMsg(txt) {
   const el = document.querySelector('.scan-hint');
-  if (el) el.textContent = txt;
+  if (el) { el.textContent = txt; el.style.whiteSpace = 'pre-line'; }
 }
 
 async function startCameraScan() {
   const video = document.getElementById('scanVideo');
-  // Camera requires a secure context (https or localhost). iOS blocks it on plain http.
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    scanMsg('อุปกรณ์นี้เปิดกล้องไม่ได้ (ต้องเปิดผ่าน HTTPS) — พิมพ์ค่าด้านล่างแทน:');
+  // Camera requires a secure context (https or localhost). Plain http over IP is blocked by the browser.
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const httpsUrl = 'https://' + location.hostname + (location.port && location.port!=='3000' ? ':'+location.port : '');
+    scanMsg('⚠️ กล้องใช้งานได้เฉพาะผ่าน HTTPS เท่านั้น\n\nกรุณาเปิดแอปผ่าน:\n' + httpsUrl + '\n(ไม่ใช่ http://...:3000)\n\nหรือพิมพ์เลขบล็อกด้วยตนเองด้านล่าง:');
     return;
   }
   try {
@@ -2294,8 +2317,13 @@ async function startCameraScan() {
   }
 }
 
+// ดึงเฉพาะบรรทัดแรกของ QR (โค้ดหลัก) ตัด label บรรทัดอื่นทิ้ง เช่น สี/Rev/เบอร์ผ้า
+function qrMainCode(raw) {
+  return String(raw || '').split(/[\r\n\t]+/)[0].trim();
+}
+
 function finishScan(val) {
-  val = String(val || '').trim();
+  val = qrMainCode(val);
   if (!val) return;
   if (scanContinuous) {
     const now = Date.now();
@@ -2308,8 +2336,9 @@ function finishScan(val) {
     if (hint) hint.textContent = `เพิ่ม ${val} (รวม ${scanSeen.size}) · สแกนต่อได้เลย หรือกด ✕ เมื่อเสร็จ`;
     return;                                 // keep scanning
   }
+  const cb = scanCallback;   // เก็บไว้ก่อน เพราะ closeScan() จะล้าง scanCallback
   closeScan();
-  scanCallback && scanCallback(val);
+  cb && cb(val);
 }
 
 function stopCamera() {
@@ -2319,7 +2348,7 @@ function stopCamera() {
 window.closeScan = closeScan;
 window.manualScan = () => {
   const inp = document.getElementById('scanManual');
-  const val = inp.value.trim();
+  const val = qrMainCode(inp.value);
   if (!val) return;
   if (scanContinuous) {
     inp.value = '';
@@ -2330,8 +2359,9 @@ window.manualScan = () => {
     if (hint) hint.textContent = `✅ เพิ่ม ${val} (รวม ${scanSeen.size}) · พิมพ์/สแกนต่อได้`;
     return;
   }
+  const cb = scanCallback;   // เก็บไว้ก่อน เพราะ closeScan() จะล้าง scanCallback
   closeScan();
-  scanCallback && scanCallback(val);
+  cb && cb(val);
 };
 
 // ══════════════════════════════════════════════════════
@@ -2369,6 +2399,19 @@ window.openScan = openScan;
 
 function infoRow(label, value) {
   return `<div class="form-group"><label>${label}</label><div style="font-size:.9rem">${value}</div></div>`;
+}
+
+// stepper แสดงสถานะขั้นตอน (current = ขั้นที่กำลังทำ, เริ่มที่ 1)
+function stepperHtml(current, labels) {
+  return `<div class="stepper">${labels.map((lb,i)=>{
+    const n = i+1;
+    const cls = n < current ? 'done' : n === current ? 'active' : 'todo';
+    const dot = n < current ? '✓' : n;
+    return `<div class="stp ${cls}">
+      <div class="stp-dot">${dot}</div>
+      <div class="stp-lbl">${lb}</div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function fmtDate(iso) {
