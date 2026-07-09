@@ -190,11 +190,6 @@ function pageHome(app) {
         <div class="hc-title">รับส่งภายนอก</div>
         <div class="hc-sub">ส่ง/รับบล็อกขึงผ้า</div>
       </div>
-      ${canViewTables()?`<div class="home-card" onclick="renderPage('blocks')">
-        <div class="hc-icon">📋</div>
-        <div class="hc-title">ทะเบียน / ข้อมูล</div>
-        <div class="hc-sub">ทะเบียนบล็อก · จัดการข้อมูล</div>
-      </div>`:''}
     </div>`;
 }
 window.toggleUserMenu = () => document.getElementById('userMenu')?.classList.toggle('hidden');
@@ -1849,6 +1844,7 @@ async function pageMasterData(app) {
       <div class="ptabs">
         ${Object.entries(MASTER_TABS).map(([k,t])=>`<button class="ptab ${k===_mdTab?'active':''}" onclick="mdSwitch('${k}')">${t.label}</button>`).join('')}
         <button class="ptab" onclick="renderPage('blocks')">📋 ทะเบียนบล็อก</button>
+        ${canAdmin()?`<button class="ptab" onclick="renderPage('userManagement')">👤 ผู้ใช้ระบบ</button>`:''}
       </div>
       <div id="md_body"></div>
     </div>`;
@@ -1981,19 +1977,35 @@ async function pageUserManagement(app) {
         <p class="scan-hint" style="margin-top:.5rem">* เพิ่มผู้ใช้ใหม่ต้องระบุรหัสผ่าน · แก้ไขผู้ใช้เดิม เว้นรหัสผ่านว่างไว้ถ้าไม่เปลี่ยน</p>
       </div>
       <div class="card">
-        <div class="card-title">รายชื่อผู้ใช้ (${users.length})</div>
+        <div class="card-title">รายชื่อผู้ใช้ (<span id="us_count">${users.length}</span>)</div>
+        <div class="row gap-sm mb">
+          <input id="us_search" class="flex1" placeholder="🔍 ค้นหา ชื่อผู้ใช้ / ชื่อ / สิทธิ์" oninput="usFilter(this.value)"/>
+          <button class="btn-secondary btn-sm" onclick="$('us_search').value='';usFilter('')">ล้าง</button>
+        </div>
         <div class="table-scroll"><table>
           <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>สิทธิ์</th><th></th></tr></thead>
-          <tbody>${users.map(u=>`<tr>
-            <td><strong>${u.username}</strong></td><td>${u.name||'-'}</td>
-            <td><span class="badge ${u.role==='administrator'?'badge-red':u.role==='supervisor'?'badge-yellow':'badge-blue'}">${ROLE_LABEL[u.role]||u.role}</span></td>
-            <td><div class="row gap-sm" style="justify-content:flex-end">
-              <button class="btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u).replace(/'/g,"&#39;")})'>แก้ไข</button>
-              <button class="btn-sm btn-danger" onclick="delUser('${u.username}')">ลบ</button>
-            </div></td></tr>`).join('')}</tbody>
+          <tbody id="us_tbody"></tbody>
         </table></div>
+        <div class="pager" id="us_pager"></div>
       </div>
     </div>`;
+  const roleCls = r => r==='administrator'?'badge-red':r==='supervisor'?'badge-yellow':'badge-blue';
+  const usRow = u => `<tr>
+    <td><strong>${u.username}</strong></td><td>${u.name||'-'}</td>
+    <td><span class="badge ${roleCls(u.role)}">${ROLE_LABEL[u.role]||u.role}</span></td>
+    <td><div class="row gap-sm" style="justify-content:flex-end">
+      <button class="btn-sm btn-secondary" onclick='editUser(${JSON.stringify(u).replace(/'/g,"&#39;")})'>แก้ไข</button>
+      <button class="btn-sm btn-danger" onclick="delUser('${u.username}')">ลบ</button>
+    </div></td></tr>`;
+  let usQuery = '';
+  const paintUsers = () => {
+    const q = usQuery.trim().toLowerCase();
+    const list = q ? users.filter(u=>`${u.username} ${u.name||''} ${u.role} ${ROLE_LABEL[u.role]||''}`.toLowerCase().includes(q)) : users;
+    $('us_count').textContent = list.length;
+    pagedTable(list, usRow, 4, 'us_tbody', 'us_pager');
+  };
+  window.usFilter = (q) => { usQuery = q||''; paintUsers(); };
+  paintUsers();
   window.editUser = (u) => {
     $('us_username').value = u.username; $('us_username').setAttribute('readonly','');
     $('us_name').value = u.name||''; $('us_password').value=''; $('us_role').value=u.role;
