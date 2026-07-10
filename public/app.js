@@ -509,7 +509,8 @@ async function pagePress(app, { filter = 'all' } = {}) {
     app.innerHTML = `
       <div class="topnav">
         <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
-        <h1>จัดเก็บ</h1>
+        <h1 class="flex1">จัดเก็บ</h1>
+        ${canViewTables() ? `<button class="btn-sm" style="background:rgba(255,255,255,.22);color:#fff" onclick="renderPage('pressDB3')" title="ข้อมูลที่จัดเก็บแล้ว">🗄️ ฐานข้อมูล</button>` : ''}
       </div>
       <div class="page">
         <div class="folder-tag">📁 Folder จัดเก็บ</div>

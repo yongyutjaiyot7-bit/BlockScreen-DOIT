@@ -9,8 +9,8 @@
   <title>BLOCK SCREEN</title>
   <link rel="manifest" href="/manifest.json"/>
   <link rel="apple-touch-icon" href="/icon-192.png"/>
-  <meta name="theme-color" content="#0284c7"/>
-  <link rel="stylesheet" href="style.css"/>
+  <meta name="theme-color" content="#4f46e5"/>
+  <link rel="stylesheet" href="style.css?v=20260710"/>
 </head>
 <body>
   <div id="app">
@@ -34,12 +34,16 @@
     </div>
   </div>
 
-  <script src="xlsx.mini.js"></script>
+  <script src="xlsx.mini.js?v=20260710"></script>
   <script src="jsQR.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260710"></script>
   <script>
+    // ลงทะเบียน Service Worker แบบไม่ให้ error ค้าง
+    // (ถ้าใบรับรอง SSL ยังไม่ถูกติดตั้ง SW จะลงทะเบียนไม่ได้ — แอปยังทำงานได้ปกติโดยไม่มี offline cache)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
+      navigator.serviceWorker.register('/sw.js').catch(function (e) {
+        console.warn('Service Worker ลงทะเบียนไม่ได้ (ปกติถ้ายังไม่ติดตั้งใบรับรอง SSL):', e && e.message);
+      });
     }
   </script>
 </body>
