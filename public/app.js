@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
-const APP_VERSION = 'v2026.07.09-auth';
+const APP_VERSION = 'v2026.07.11-film';
 
 // ── state ──
 let master = {};
@@ -429,7 +429,15 @@ function pagePressMenu(app) {
         <div class="hc-title">จัดเก็บ</div>
         <div class="hc-sub">จัดเก็บเข้าคลัง</div>
       </div>
-    </div>`;
+    </div>
+    ${canViewTables()?`<div class="page" style="padding-top:0">
+      <div class="card">
+        <div class="card-title">ข้อมูล / รายงาน</div>
+        <div class="menu-actions">
+          <button class="menu-btn menu-btn-report" onclick="renderPage('pressDB3')"><span class="mb-ico">🗄️</span><span>ตารางข้อมูล (DATA BASE 3) · Export Excel</span></button>
+        </div>
+      </div>
+    </div>`:''}`;
 }
 
 const PRESS_VIEWS = {
@@ -510,7 +518,7 @@ async function pagePress(app, { filter = 'all' } = {}) {
       <div class="topnav">
         <button class="back-btn" onclick="renderPage('pressMenu')">‹</button>
         <h1 class="flex1">จัดเก็บ</h1>
-        ${canViewTables() ? `<button class="btn-sm" style="background:rgba(255,255,255,.22);color:#fff" onclick="renderPage('pressDB3')" title="ข้อมูลที่จัดเก็บแล้ว">🗄️ ฐานข้อมูล</button>` : ''}
+        ${canViewTables()?`<button class="btn-sm" style="background:rgba(255,255,255,.22);color:#fff" onclick="renderPage('pressDB3')" title="ข้อมูลที่จัดเก็บแล้ว">🗄️ ฐานข้อมูล</button>`:''}
       </div>
       <div class="page">
         <div class="folder-tag">📁 Folder จัดเก็บ</div>
@@ -529,6 +537,9 @@ async function pagePress(app, { filter = 'all' } = {}) {
       </div>`;
     return;
   }
+
+  // รายการที่จัดเก็บแล้วไม่ต้องแสดงในหน้าร้องขอ — ย้ายไปอยู่ที่ฐานข้อมูล (DATA BASE 3)
+  docs = docs.filter(d => d.status !== 'stored');
 
   app.innerHTML = `
     <div class="topnav">
@@ -605,7 +616,7 @@ function pagePressNew(app) {
       <div class="card">
         <table class="ftable">
           <tr><td class="lbl">ปัญหา <span class="req">*</span></td><td class="in"><select id="p_problem" onchange="togglePressRemark()">${probOpts}</select></td></tr>
-          <tr><td class="lbl">หมายเหตุ</td><td class="in"><input id="p_remark" placeholder="ระบุเพิ่มเติม (จำเป็นเมื่อเลือก อื่นๆ)"/></td></tr>
+          <tr><td class="lbl">หมายเหตุ <span class="req" id="p_remark_req" style="display:none">*</span></td><td class="in"><input id="p_remark" placeholder="ระบุเพิ่มเติม (จำเป็นเมื่อเลือก อื่นๆ)"/></td></tr>
           <tr><td class="lbl">รหัสพนักงานผู้ร้องขอ <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="p_emp" list="empList" placeholder="พิมพ์ / เลือก / สแกน" class="flex1" oninput="lookupEmp(this,'p_emp_name')"/><button class="scan-btn" onclick="openScan(v=>{$('p_emp').value=v;lookupEmp($('p_emp'),'p_emp_name')})">📷</button></div>
             <div id="p_emp_name" class="emp-name"></div></td></tr>
@@ -622,7 +633,14 @@ function pagePressNew(app) {
     try { const { data } = await api('/api/block/'+encodeURIComponent(bno)); el.textContent = data.size_label || '-'; }
     catch { el.textContent = 'ไม่พบบล็อกในทะเบียน'; }
   };
-  window.togglePressRemark = () => {};
+  window.togglePressRemark = () => {
+    const isOther = $('p_problem').value === 'อื่นๆ';
+    const req = $('p_remark_req');
+    if (req) req.style.display = isOther ? 'inline' : 'none';
+    const inp = $('p_remark');
+    if (inp) inp.placeholder = isOther ? 'บังคับกรอก (เลือก "อื่นๆ")' : 'ระบุเพิ่มเติม (ถ้ามี)';
+  };
+  togglePressRemark();
 
   window.addFilmRow = () => {
     if (window._pressFilms.length >= 4) { toast('สูงสุด 4 ฟิล์ม','red'); return; }
@@ -633,7 +651,7 @@ function pagePressNew(app) {
   function renderFilmRows() {
     $('film_rows').innerHTML = window._pressFilms.map((f,i)=>`
       <tr>
-        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{window._pressFilms[${i}].internal_code=v;renderFilmRowsG();})">📷</button></td>
+        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{parseFilmQR(v,window._pressFilms[${i}]);renderFilmRowsG();},{raw:true})">📷</button></td>
         <td><input value="${f.internal_code}" oninput="window._pressFilms[${i}].internal_code=this.value" placeholder="H-E-26-01" style="min-width:110px"/></td>
         <td><input value="${f.color_order}" oninput="window._pressFilms[${i}].color_order=this.value" placeholder="1" style="width:56px"/></td>
         <td><input value="${f.revision}" oninput="window._pressFilms[${i}].revision=this.value" placeholder="1" style="width:56px"/></td>
@@ -1181,7 +1199,7 @@ function pageInternalPrepare(app) {
         </div>
         <div class="table-scroll"><table class="filmtbl"><thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Revision</th><th></th></tr></thead><tbody>
           ${b.films.map((f,fi)=>`<tr>
-            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{setPrepFilm(${bi},${fi},'internal_code',v);renderPrepRowsG();})">📷</button></td>
+            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{parseFilmQR(v,window._prepBlocks[${bi}].films[${fi}]);renderPrepRowsG();},{raw:true})">📷</button></td>
             <td><input value="${f.internal_code}" oninput="setPrepFilm(${bi},${fi},'internal_code',this.value)" placeholder="H-E-26-01" style="min-width:100px"/></td>
             <td><input value="${f.color_order}" oninput="setPrepFilm(${bi},${fi},'color_order',this.value)" placeholder="1" style="width:56px"/></td>
             <td><input value="${f.revision}" oninput="setPrepFilm(${bi},${fi},'revision',this.value)" placeholder="1" style="width:56px"/></td>
@@ -2246,8 +2264,9 @@ window.exportData = exportData;
 // ══════════════════════════════════════════════════════
 //  QR SCANNER
 // ══════════════════════════════════════════════════════
-let scanContinuous = false, scanSeen = null, scanLast = 0;
+let scanContinuous = false, scanSeen = null, scanLast = 0, scanRaw = false;
 function openScan(cb, opts = {}) {
+  scanRaw = !!opts.raw;   // raw=true → ส่งค่าดิบทั้งหมด (หลายบรรทัด) ให้ callback เพื่อแยกลงหลายช่อง
   scanCallback = cb;
   scanContinuous = !!opts.continuous;
   scanSeen = new Set();
@@ -2322,9 +2341,23 @@ async function startCameraScan() {
 function qrMainCode(raw) {
   return String(raw || '').split(/[\r\n\t]+/)[0].trim();
 }
+// แยกข้อมูล QR ฟิล์ม (หลายบรรทัด) ลง 4 ช่อง: รหัสภายใน / ลำดับสี / Rev / เบอร์ผ้า
+function parseFilmQR(raw, film) {
+  const p = String(raw || '').split(/[\r\n\t]+/).map(s => s.trim());
+  if (p[0]) film.internal_code = p[0];
+  if (p[1]) film.color_order = p[1];
+  if (p[2]) film.revision = p[2];
+  if (p[3]) {
+    const fab = p[3];
+    const ids = (master.fabric_types || []).map(t => t.id);
+    film.fabric_no = ids.find(id => id === fab) || ids.find(id => id.startsWith(fab)) || ids.find(id => id.includes(fab)) || fab;
+  }
+  return film;
+}
 
 function finishScan(val) {
-  val = qrMainCode(val);
+  const raw = String(val || '').trim();
+  val = scanRaw ? raw : qrMainCode(val);
   if (!val) return;
   if (scanContinuous) {
     const now = Date.now();
@@ -2349,7 +2382,7 @@ function stopCamera() {
 window.closeScan = closeScan;
 window.manualScan = () => {
   const inp = document.getElementById('scanManual');
-  const val = qrMainCode(inp.value);
+  const val = scanRaw ? inp.value.trim() : qrMainCode(inp.value);
   if (!val) return;
   if (scanContinuous) {
     inp.value = '';
