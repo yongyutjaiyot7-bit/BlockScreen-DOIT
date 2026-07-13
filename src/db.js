@@ -275,12 +275,16 @@ function nextDocNo(prefix, table) {
   const rows = all(`SELECT doc_no FROM ${table} WHERE doc_no LIKE '${prefix}%/${yr}'`);
   return `${prefix}${String(rows.length + 1).padStart(6, '0')}/${yr}`;
 }
-// เลขที่เอกสารล้าง/โค๊ตบล็อก: yymmdd-xxxxxx (running 6 หลัก นับใหม่ต่อวัน)
-function nextCleanDocNo(dateStr) {
+// เลขที่เอกสารรูปแบบ PREFIX+yymmdd-xxxxxx (running 6 หลัก นับใหม่ต่อวัน ต่อ prefix)
+function nextDatedDocNo(prefix, table, dateStr) {
   const [y, m, d] = String(dateStr || new Date().toISOString().slice(0, 10)).split('-');
-  const prefix = `${y.slice(-2)}${m}${d}`;
-  const rows = all(`SELECT doc_no FROM clean_docs WHERE doc_no LIKE '${prefix}-%'`);
-  return `${prefix}-${String(rows.length + 1).padStart(6, '0')}`;
+  const stamp = `${prefix}${y.slice(-2)}${m}${d}-`;
+  const rows = all(`SELECT doc_no FROM ${table} WHERE doc_no LIKE '${stamp}%'`);
+  return `${stamp}${String(rows.length + 1).padStart(6, '0')}`;
+}
+// เลขที่เอกสารล้าง/โค๊ตบล็อก: yymmdd-xxxxxx (ไม่มี prefix)
+function nextCleanDocNo(dateStr) {
+  return nextDatedDocNo('', 'clean_docs', dateStr);
 }
 
 // ── Exported helpers ──
@@ -425,6 +429,18 @@ export function createCleanDoc(data) {
 export function peekCleanDocNo() {
   return nextCleanDocNo(new Date().toISOString().slice(0, 10));
 }
+const PEEK_DEFS = {
+  clean:            ['',   'clean_docs'],
+  press:            ['R',  'press_requests'],
+  prepare:          ['M',  'internal_docs'],
+  stretch_send:     ['OU', 'internal_docs'],
+  stretch_receive:  ['IN', 'internal_docs'],
+};
+export function peekDocNo(kind) {
+  const def = PEEK_DEFS[kind];
+  if (!def) throw new Error('ประเภทเอกสารไม่ถูกต้อง');
+  return nextDatedDocNo(def[0], def[1], new Date().toISOString().slice(0, 10));
+}
 export function listCleanDocs() {
   const rows = all('SELECT * FROM clean_docs ORDER BY doc_no DESC LIMIT 500');
   rows.forEach(r => { r.emp1_name = empFirstName(r.emp1_code); r.emp2_name = empFirstName(r.emp2_code); });
@@ -436,8 +452,8 @@ export function getCleanDoc(doc_no) {
 
 // ── MODULE 2: Press request ──
 export function createPressRequest(data) {
-  const doc_no = nextDocNo('R', 'press_requests');
   const ts = now();
+  const doc_no = nextDatedDocNo('R', 'press_requests', data.date || ts.slice(0, 10));
   run('INSERT INTO press_requests(doc_no,date,time,dept,old_block_no,requester_emp,problem_type,remarks,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
     [doc_no, data.date||ts.slice(0,10), data.time||ts.slice(11,16), data.dept||'', data.old_block_no||'',
      data.requester_emp||null, data.problem_type||null, data.remarks||null, 'pending', ts]);
@@ -514,8 +530,8 @@ export function listStoredPress() {
 // ── MODULE 3: Internal transfer ──
 // ส่งบล็อกขึงผ้า (OU prefix)
 export function createStretchSend(data) {
-  const doc_no = nextDocNo('OU', 'internal_docs');
   const ts = now();
+  const doc_no = nextDatedDocNo('OU', 'internal_docs', data.date || ts.slice(0, 10));
   run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
     [doc_no, 'stretch_send', data.from_dept||null, data.to_dept||null, data.sender_emp||null,
      data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'sent', ts]);
@@ -537,8 +553,8 @@ export function listStretchSendRows() {
 }
 // รับบล็อกขึงผ้า (IN prefix)
 export function createStretchReceive(data) {
-  const doc_no = nextDocNo('IN', 'internal_docs');
   const ts = now();
+  const doc_no = nextDatedDocNo('IN', 'internal_docs', data.date || ts.slice(0, 10));
   run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
     [doc_no, 'stretch_receive', data.from_dept||null, data.to_dept||null, data.receiver_emp||null,
      data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'received', ts]);
@@ -562,8 +578,8 @@ export function listStretchReceiveRows() {
 }
 // ── จัดเตรียม / ขนส่ง-ตรวจรับ / ตรวจรับ-จัดเก็บ (M-doc pipeline) ──
 export function createInternalDoc(type, data) {
-  const doc_no = nextDocNo('M', 'internal_docs');
   const ts = now();
+  const doc_no = nextDatedDocNo('M', 'internal_docs', data.date || ts.slice(0, 10));
   run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,prep_emp,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
     [doc_no, type, data.from_dept||null, data.to_dept||null, data.emp_code||null, data.emp_code||null, data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'prepared', ts]);
   (data.blocks||[]).forEach(b => {
