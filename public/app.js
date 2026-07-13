@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
-const APP_VERSION = 'v2026.07.11-docprev';
+const APP_VERSION = 'v2026.07.12-wake';
 
 // ── state ──
 let master = {};
@@ -45,12 +45,27 @@ function logout(){
   renderLogin();
 }
 
+// ── กันหน้าจอมือถือดับขณะใช้งาน (Screen Wake Lock) ──
+let _wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      _wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch {}
+}
+// ขอ wake lock ใหม่เมื่อกลับมาที่หน้าจอ (ระบบจะปล่อยเมื่อสลับแท็บ)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+});
+
 // ── bootstrap ──
 (async () => {
   if (!authToken || !currentUser) { renderLogin(); return; }
   try {
     const res = await api('/api/master');
     master = res.data || {};
+    requestWakeLock();   // กันหน้าจอดับ
     renderPage('home');
   } catch { renderLogin(); }
 })();
@@ -90,6 +105,7 @@ window.doLogin = async () => {
     localStorage.setItem('bs_user', JSON.stringify(currentUser));
     document.querySelector('.bottomnav')?.style.removeProperty('display');
     const m = await api('/api/master'); master = m.data || {};
+    requestWakeLock();   // กันหน้าจอดับ (login = user gesture)
     toast('ยินดีต้อนรับ '+(currentUser.name||currentUser.username));
     renderPage('home');
   } catch (e) { errEl.textContent = 'เชื่อมต่อไม่ได้'; }
@@ -2443,6 +2459,7 @@ async function api(url, method = 'GET', body = null) {
   return json;
 }
 
+let _empLookupTimer = null;
 async function lookupEmp(input, nameId) {
   const code = input.value.trim();
   const el = document.getElementById(nameId);
@@ -2450,11 +2467,16 @@ async function lookupEmp(input, nameId) {
   if (!code) { el.textContent = ''; el.style.color = ''; return; }
   try {
     const { data } = await api(`/api/employee/${code}`);
-    el.textContent = data.fullname;
+    el.textContent = '✓ ' + data.fullname;
     el.style.color = 'var(--green)';
   } catch {
-    el.textContent = 'ไม่พบรหัสพนักงาน';
+    el.textContent = '❌ ไม่พบรหัสพนักงาน';
     el.style.color = 'var(--red)';
+    // เตือนเสียงเมื่อพิมพ์หยุดแล้วยังไม่พบ (debounce กันเสียงรัวตอนพิมพ์)
+    clearTimeout(_empLookupTimer);
+    _empLookupTimer = setTimeout(() => {
+      if (input.value.trim() === code && code.length >= 3) alarmBeep();
+    }, 700);
   }
 }
 window.lookupEmp = lookupEmp;
