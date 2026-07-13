@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 
 import {
   getEmployee, getBlock, getMasterData, addBlock, listBlocks,
-  createCleanDoc, listCleanDocs, getCleanDoc,
+  createCleanDoc, listCleanDocs, getCleanDoc, peekCleanDocNo,
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
   summitPressInspect, receivePress,
   createStretchSend, listStretchSendRows, createStretchReceive, listStretchReceiveRows,
@@ -110,6 +110,7 @@ app.delete('/api/master/:table/:id', requireRole('administrator','supervisor'), 
 
 // ---------- MODULE 1: CLEAN / COAT ----------
 app.get('/api/clean', wrap((req, res) => ok(res, listCleanDocs())));
+app.get('/api/clean-next', wrap((req, res) => ok(res, { doc_no: peekCleanDocNo() })));
 app.get('/api/clean/:doc_no', wrap((req, res) => {
   const d = getCleanDoc(req.params.doc_no);
   if (!d) return err(res, 'ไม่พบเอกสาร', 404);

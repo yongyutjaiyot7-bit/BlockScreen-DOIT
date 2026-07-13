@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
-const APP_VERSION = 'v2026.07.11-film';
+const APP_VERSION = 'v2026.07.11-docno';
 
 // ── state ──
 let master = {};
@@ -299,7 +299,7 @@ function pageCleanNew(app) {
       <div class="card">
         <div class="card-title">ขั้นตอนการล้างบล็อกสกรีน / โค๊ตบล็อก</div>
         <table class="ftable">
-          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto">อัตโนมัติ</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto" id="c_docno">กำลังออกเลข...</td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">ขั้นตอน <span class="req">*</span></td><td class="in"><select id="c_step">${stepOpts}</select></td></tr>
           <tr><td class="lbl">รหัสพนักงาน BL คนที่ 1 <span class="req">*</span></td><td class="in">
@@ -330,6 +330,9 @@ function pageCleanNew(app) {
 
       <button class="btn-primary" style="width:100%;font-size:1.05rem;padding:.9rem" onclick="submitClean()">ส่ง</button>
     </div>`;
+
+  // ดึงเลขที่เอกสารถัดไปมาแสดง
+  api('/api/clean-next').then(r=>{ const el=$('c_docno'); if(el) el.textContent = r.data.doc_no; }).catch(()=>{});
 
   window.addCleanBlock = (val) => {
     val = (val || '').trim();
@@ -607,7 +610,7 @@ function pagePressNew(app) {
         <p class="scan-hint" style="margin:.3rem 0 .5rem">สแกน QR CODE ในบล็อกทุกสี · สูงสุด 4 Film</p>
         <div class="table-scroll">
           <table class="filmtbl">
-            <thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Rev.</th><th>เบอร์ผ้า</th><th></th></tr></thead>
+            <thead><tr><th></th><th>รหัสภายใน <span class="req">*</span></th><th>ลำดับสี <span class="req">*</span></th><th>Rev.</th><th>เบอร์ผ้า <span class="req">*</span></th><th></th></tr></thead>
             <tbody id="film_rows"></tbody>
           </table>
         </div>
@@ -651,7 +654,7 @@ function pagePressNew(app) {
   function renderFilmRows() {
     $('film_rows').innerHTML = window._pressFilms.map((f,i)=>`
       <tr>
-        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{parseFilmQR(v,window._pressFilms[${i}]);renderFilmRowsG();},{raw:true})">📷</button></td>
+        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{const fl=parseFilmQR(v,window._pressFilms[${i}]);renderFilmRowsG();filmScanFeedback(fl,['internal_code','color','fabric']);},{raw:true})">📷</button></td>
         <td><input value="${f.internal_code}" oninput="window._pressFilms[${i}].internal_code=this.value" placeholder="H-E-26-01" style="min-width:110px"/></td>
         <td><input value="${f.color_order}" oninput="window._pressFilms[${i}].color_order=this.value" placeholder="1" style="width:56px"/></td>
         <td><input value="${f.revision}" oninput="window._pressFilms[${i}].revision=this.value" placeholder="1" style="width:56px"/></td>
@@ -669,6 +672,14 @@ function pagePressNew(app) {
     const old_block_no = $('p_old_block').value.trim();
     if (!old_block_no) { toast('กรุณากรอกเลขบล็อกเดิม','red'); return; }
     if ($('p_problem').value === 'อื่นๆ' && !$('p_remark').value.trim()) { toast('เลือก "อื่นๆ" ต้องกรอกหมายเหตุ','red'); return; }
+    // บังคับกรอก: รหัสภายใน + ลำดับสี + เบอร์ผ้า ของทุกฟิล์มที่กรอกไว้
+    const filledFilms = window._pressFilms.filter(f=>f.internal_code.trim()||f.color_order.trim()||f.fabric_no);
+    if (filledFilms.length===0) { toast('กรุณาระบุ/สแกนฟิล์มอย่างน้อย 1 รายการ','red'); return; }
+    for (const f of filledFilms) {
+      if (!f.internal_code.trim() || !f.color_order.trim() || !f.fabric_no) {
+        toast('ฟิล์มต้องกรอก รหัสภายใน · ลำดับสี · เบอร์ผ้า ให้ครบ','red'); alarmBeep(); return;
+      }
+    }
     const body = {
       date: todayISO(),
       time: nowTime(),
@@ -1199,7 +1210,7 @@ function pageInternalPrepare(app) {
         </div>
         <div class="table-scroll"><table class="filmtbl"><thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Revision</th><th></th></tr></thead><tbody>
           ${b.films.map((f,fi)=>`<tr>
-            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{parseFilmQR(v,window._prepBlocks[${bi}].films[${fi}]);renderPrepRowsG();},{raw:true})">📷</button></td>
+            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{const fl=parseFilmQR(v,window._prepBlocks[${bi}].films[${fi}]);renderPrepRowsG();filmScanFeedback(fl,['internal_code','color']);},{raw:true})">📷</button></td>
             <td><input value="${f.internal_code}" oninput="setPrepFilm(${bi},${fi},'internal_code',this.value)" placeholder="H-E-26-01" style="min-width:100px"/></td>
             <td><input value="${f.color_order}" oninput="setPrepFilm(${bi},${fi},'color_order',this.value)" placeholder="1" style="width:56px"/></td>
             <td><input value="${f.revision}" oninput="setPrepFilm(${bi},${fi},'revision',this.value)" placeholder="1" style="width:56px"/></td>
@@ -2341,18 +2352,35 @@ async function startCameraScan() {
 function qrMainCode(raw) {
   return String(raw || '').split(/[\r\n\t]+/)[0].trim();
 }
-// แยกข้อมูล QR ฟิล์ม (หลายบรรทัด) ลง 4 ช่อง: รหัสภายใน / ลำดับสี / Rev / เบอร์ผ้า
+// แยกข้อมูล QR ฟิล์ม (หลายบรรทัด) ลงช่อง — รองรับ label เช่น "color: 2", "Rev : 1"
+// บรรทัดแรก = รหัสภายใน · หลัง "color:" = ลำดับสี · หลัง "Rev:" = Rev · บรรทัดที่เหลือ = เบอร์ผ้า
+// คืนค่า flags บอกว่าอ่านครบช่องไหนบ้าง
 function parseFilmQR(raw, film) {
-  const p = String(raw || '').split(/[\r\n\t]+/).map(s => s.trim());
-  if (p[0]) film.internal_code = p[0];
-  if (p[1]) film.color_order = p[1];
-  if (p[2]) film.revision = p[2];
-  if (p[3]) {
-    const fab = p[3];
-    const ids = (master.fabric_types || []).map(t => t.id);
-    film.fabric_no = ids.find(id => id === fab) || ids.find(id => id.startsWith(fab)) || ids.find(id => id.includes(fab)) || fab;
+  const lines = String(raw || '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+  let color = '', rev = '', fabricLine = '';
+  if (lines[0]) film.internal_code = lines[0];
+  for (let i = 1; i < lines.length; i++) {
+    const ln = lines[i];
+    const mc = ln.match(/^color\s*:?\s*(.*)$/i);
+    const mr = ln.match(/^rev\.?\s*:?\s*(.*)$/i);
+    if (mc) color = mc[1].trim();
+    else if (mr) rev = mr[1].trim();
+    else if (!fabricLine) fabricLine = ln;
   }
-  return film;
+  if (color) film.color_order = color;
+  if (rev) film.revision = rev;
+  if (fabricLine) {
+    const ids = (master.fabric_types || []).map(t => t.id);
+    film.fabric_no = ids.find(id => id === fabricLine) || ids.find(id => id.startsWith(fabricLine)) || ids.find(id => id.includes(fabricLine)) || fabricLine;
+  }
+  return { internal_code: !!film.internal_code, color: !!color, revision: !!rev, fabric: !!fabricLine };
+}
+// เสียง/แจ้งเตือนหลังสแกนฟิล์ม (need = ช่องที่ต้องครบ)
+function filmScanFeedback(flags, need) {
+  const ok = need.every(k => flags[k]);
+  if (ok) { successBeep(); }
+  else { alarmBeep(); toast('❌ ข้อมูล QR ไม่ครบ กรุณาสแกนใหม่','red'); }
+  return ok;
 }
 
 function finishScan(val) {

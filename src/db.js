@@ -275,6 +275,13 @@ function nextDocNo(prefix, table) {
   const rows = all(`SELECT doc_no FROM ${table} WHERE doc_no LIKE '${prefix}%/${yr}'`);
   return `${prefix}${String(rows.length + 1).padStart(6, '0')}/${yr}`;
 }
+// เลขที่เอกสารล้าง/โค๊ตบล็อก: yymmdd-xxxxxx (running 6 หลัก นับใหม่ต่อวัน)
+function nextCleanDocNo(dateStr) {
+  const [y, m, d] = String(dateStr || new Date().toISOString().slice(0, 10)).split('-');
+  const prefix = `${y.slice(-2)}${m}${d}`;
+  const rows = all(`SELECT doc_no FROM clean_docs WHERE doc_no LIKE '${prefix}-%'`);
+  return `${prefix}-${String(rows.length + 1).padStart(6, '0')}`;
+}
 
 // ── Exported helpers ──
 export function getEmployee(code) {
@@ -406,13 +413,17 @@ export function createCleanDoc(data) {
   const date = data.date || ts.slice(0, 10);
   const created = [];
   (data.blocks || []).forEach(bno => {
-    const doc_no = nextDocNo('', 'clean_docs');
+    const doc_no = nextCleanDocNo(date);
     const blk = getBlock(bno);
     run('INSERT INTO clean_docs(doc_no,date,block_no,size_label,process_step,emp1_code,emp2_code,remarks,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
       [doc_no, date, bno, blk?.size_label || null, data.process_step || '', data.emp1 || null, data.emp2 || null, data.remarks || null, ts]);
     created.push(doc_no);
   });
   return { count: created.length, doc_nos: created, doc_no: created[0] || null };
+}
+// ดูเลขที่เอกสารถัดไป (ยังไม่บันทึกจริง) สำหรับแสดงบนฟอร์ม
+export function peekCleanDocNo() {
+  return nextCleanDocNo(new Date().toISOString().slice(0, 10));
 }
 export function listCleanDocs() {
   const rows = all('SELECT * FROM clean_docs ORDER BY doc_no DESC LIMIT 500');
