@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
-const APP_VERSION = 'v2026.07.13-pending';
+const APP_VERSION = 'v2026.07.13-dbcards2';
 
 // ── state ──
 let master = {};
@@ -304,43 +304,26 @@ function pageCleanMenu(app) {
 async function pageClean(app) {
   const { data: rows } = await api('/api/clean');
   const steps = master.process_steps;
-  const cols = 4 + steps.length + 3;
+  // สีป้ายขั้นตอน หมุนตามลำดับขั้นตอนใน master
+  const stepColors = ['sp-pink','sp-green','sp-blue','sp-amber','sp-purple','sp-gray'];
+  const stepClassOf = name => stepColors[Math.max(0, steps.findIndex(s=>s.name===name)) % stepColors.length];
+  const docs = dbBuildDocs(rows, {
+    date: r => fmtDate(r.date), block: r => r.block_no || '-',
+    blockRight: r => r.size_label || 'ไม่ระบุขนาด',
+    step: r => r.process_step || '-', stepClass: r => stepClassOf(r.process_step),
+    staff: r => [{ n:1, name:r.emp1_name }, { n:2, name:r.emp2_name }],
+    meta: r => [{ label:'หมายเหตุ', value:r.remarks||'-' }],
+    blocksTitle: 'บล็อกที่ล้าง',
+  });
+  dbRegister(docs, { page:'clean', params:{} });
   app.innerHTML = `
     <div class="topnav">
       <button class="back-btn" onclick="renderPage('cleanMenu')">‹</button>
       <h1>🧹 DATA BASE 1</h1>
       <button class="btn-primary btn-sm" onclick="renderPage('cleanNew')">+ เพิ่ม</button>
     </div>
-    <div class="page">
-      <div class="card">
-        <div class="row gap-sm" style="align-items:center;margin-bottom:.7rem">
-          <span class="card-title flex1" style="margin:0;border:none;padding:0">บันทึกการล้างบล็อกสกรีน</span>
-          <button class="btn-success btn-sm" onclick="exportClean()">⬇️ Excel</button>
-        </div>
-        <div class="table-scroll">
-          <table class="db1">
-            <thead><tr>
-              <th>เลขที่เอกสาร</th><th>วันที่</th><th>เลขที่บล็อก</th><th>ขนาดบล็อก</th>
-              ${steps.map(s=>`<th class="stepcol">${s.name}</th>`).join('')}
-              <th>พนักงานคนที่ 1</th><th>พนักงานคนที่ 2</th><th>หมายเหตุ</th>
-            </tr></thead>
-            <tbody id="clean_tbody"></tbody>
-          </table>
-        </div>
-        <div class="pager" id="clean_pager"></div>
-      </div>
-    </div>`;
-
-  pagedTable(rows, r=>`<tr>
-      <td><strong>${r.doc_no}</strong></td>
-      <td>${fmtDate(r.date)}</td>
-      <td><strong>${r.block_no||'-'}</strong></td>
-      <td>${r.size_label||'-'}</td>
-      ${steps.map(s=>`<td class="ctr">${r.process_step===s.name?'<span class="mark1">1</span>':'-'}</td>`).join('')}
-      <td>${r.emp1_name||'-'}</td>
-      <td>${r.emp2_name||'-'}</td>
-      <td>${r.remarks||'-'}</td>
-    </tr>`, cols, 'clean_tbody', 'clean_pager');
+    <div class="page">${dbCardHtml({ id:'cldb', title:'บันทึกการล้างบล็อกสกรีน', staffLabel:'ผู้ปฏิบัติงาน', exportFn:'exportClean' })}</div>`;
+  dbCardWire('cldb', docs);
 
   window.exportClean = () => {
     if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
@@ -646,7 +629,7 @@ function pagePressNew(app) {
   window._pressFilms = [
     {internal_code:'',color_order:'',revision:'',fabric_no:''},
   ];
-  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id} – ${d.name}</option>`).join('');
+  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
   const probOpts = master.problems.map(p=>`<option>${p.name}</option>`).join('');
   const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
   app.innerHTML = `
@@ -1145,21 +1128,23 @@ async function pagePressStore(app, {doc_no}) {
 // ── DATA BASE 3 — ฟอร์มใบเบิกจ่ายบล็อก ──
 async function pagePressDB3(app) {
   const { data: rows } = await api('/api/press-stored');
+  const docs = dbBuildDocs(rows, {
+    date: r => fmtDate(r.store_date||r.date), block: r => r.new_block_no || '-',
+    blockRight: r => r.internal_codes || '',
+    step: () => 'จัดเก็บแล้ว', stepClass: () => 'sp-green',
+    staff: r => [{ n:1, name:r.sender_name }, { n:2, name:r.receiver_name }],
+    meta: r => [
+      { label:'รหัสภายใน', value:r.internal_codes||'-' }, { label:'Revision', value:r.revisions||'-' },
+      { label:'สี', value:r.color_orders||'-' }, { label:'ถึงหน่วยงาน', value:r.store_to_dept||'-' },
+      { label:'ที่จัดเก็บ', value:r.storage_location||'-' }, { label:'หมายเหตุ', value:r.store_remarks||'-' },
+    ],
+    blocksTitle: 'เลขที่บล็อก',
+  });
+  dbRegister(docs, { page:'pressDB3', params:{} });
   app.innerHTML = `
-    <div class="topnav"><button class="back-btn" onclick="renderPage('pressMenu')">‹</button><h1>DATA BASE 3</h1>
-      <button class="btn-primary btn-sm" onclick="exportDB3()">⬇ Excel</button></div>
-    <div class="page"><div class="card"><div class="card-title">ฟอร์มใบเบิกจ่ายบล็อก</div>
-      <div class="table-scroll"><table class="db1"><thead><tr>
-        <th>วันที่</th><th>เลขที่เอกสาร</th><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>จากหน่วยงาน</th><th>ผู้ส่ง</th><th>Revision</th><th>สี</th><th>ผู้รับ</th><th>ถึงหน่วยงาน</th><th>ที่จัดเก็บ</th><th>หมายเหตุ</th>
-      </tr></thead><tbody>
-      ${rows.length===0?`<tr><td colspan="12" class="no-data">ยังไม่มีรายการ</td></tr>`:rows.map(r=>`<tr>
-        <td>${fmtDate(r.store_date||r.date)}</td><td><strong>${r.doc_no}</strong></td><td><strong>${r.new_block_no||'-'}</strong></td>
-        <td style="font-size:.75rem">${r.internal_codes||'-'}</td><td>บล็อก</td><td>${r.sender_name||'-'}</td>
-        <td>${r.revisions||'-'}</td><td>${r.color_orders||'-'}</td><td>${r.receiver_name||'-'}</td>
-        <td>${r.store_to_dept||'-'}</td><td>${r.storage_location||'-'}</td><td>${r.store_remarks||'-'}</td>
-      </tr>`).join('')}
-      </tbody></table></div>
-    </div></div>`;
+    <div class="topnav"><button class="back-btn" onclick="renderPage('pressMenu')">‹</button><h1>DATA BASE 3</h1></div>
+    <div class="page">${dbCardHtml({ id:'pdb3', title:'ใบเบิกจ่ายบล็อก', staffLabel:'ผู้ส่ง / ผู้รับ', exportFn:'exportDB3' })}</div>`;
+  dbCardWire('pdb3', docs);
   window.exportDB3=()=>{
     const data=rows.map(r=>({'วันที่':fmtDate(r.store_date||r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.new_block_no,'รหัสภายใน':r.internal_codes,'จากหน่วยงาน':'บล็อก','ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'ถึงหน่วยงาน':r.store_to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.store_remarks}));
     styledXlsx(data,'DB3','DataBase3.xlsx');
@@ -1197,30 +1182,24 @@ function pageInternal(app) {
 // ── ตารางใบเบิกจ่ายบล็อก (รายงานการตรวจรับ/จัดเก็บ) ──
 async function pageInternalDatabase(app) {
   const { data: rows } = await api('/api/internal-stored');
-  const cols = ['วันที่','เลขที่เอกสาร','เลขที่บล็อก','รหัสภายใน','หน่วยงาน','ผู้ส่ง','Revision','สี','ผู้รับ','หน่วยงาน','ที่จัดเก็บ','หมายเหตุ'];
+  const docs = dbBuildDocs(rows, {
+    date: r => fmtDate(r.doc_date), block: r => r.block_no,
+    blockRight: r => r.internal_code || '',
+    step: () => 'จัดเก็บแล้ว', stepClass: () => 'sp-green',
+    staff: r => [{ n:1, name:r.sender }, { n:2, name:r.receiver }],
+    meta: r => [
+      { label:'รหัสภายใน', value:r.internal_code||'-' }, { label:'หน่วยงาน(ผู้ส่ง)', value:r.from_dept||'-' },
+      { label:'Revision', value:r.revision||'-' }, { label:'สี', value:r.color_order||'-' },
+      { label:'หน่วยงาน(ผู้รับ)', value:r.to_dept||'-' }, { label:'ที่จัดเก็บ', value:r.storage_location||'-' },
+      { label:'หมายเหตุ', value:r.remark||'-' },
+    ],
+    blocksTitle: 'เลขที่บล็อก',
+  });
+  dbRegister(docs, { page:'internalDatabase', params:{} });
   app.innerHTML = `
     <div class="topnav"><button class="back-btn" onclick="renderPage('internal')">‹</button><h1>📋 ใบเบิกจ่ายบล็อก</h1></div>
-    <div class="page">
-      <div class="card">
-        <div class="row gap-sm" style="align-items:center;margin-bottom:.7rem">
-          <span class="card-title flex1" style="margin:0;border:none;padding:0">รายการที่ตรวจรับและจัดเก็บแล้ว</span>
-          <button class="btn-success btn-sm" onclick="exportIssueSlip()">⬇️ Excel</button>
-        </div>
-        <div class="table-scroll"><table class="db1"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-          <tbody id="issue_tbody"></tbody>
-        </table></div>
-        <div class="pager" id="issue_pager"></div>
-      </div>
-    </div>`;
-  pagedTable(rows, r=>`<tr>
-      <td>${r.doc_date||'-'}</td><td><strong>${r.doc_no}</strong></td>
-      <td class="ctr"><strong>${r.block_no}</strong></td>
-      <td style="color:var(--red);font-weight:700">${r.internal_code||'-'}</td>
-      <td class="ctr"><strong>${r.from_dept||'-'}</strong></td><td>${r.sender||'-'}</td>
-      <td class="ctr">${r.revision||'-'}</td><td class="ctr">${r.color_order||'-'}</td>
-      <td>${r.receiver||'-'}</td><td class="ctr"><strong>${r.to_dept||'-'}</strong></td>
-      <td class="ctr"><strong>${r.storage_location||'-'}</strong></td><td>${r.remark||''}</td>
-    </tr>`, cols.length, 'issue_tbody', 'issue_pager');
+    <div class="page">${dbCardHtml({ id:'indb', title:'รายการที่ตรวจรับและจัดเก็บแล้ว', staffLabel:'ผู้ส่ง / ผู้รับ', exportFn:'exportIssueSlip' })}</div>`;
+  dbCardWire('indb', docs);
   window.exportIssueSlip = () => {
     if (!rows.length) { toast('ไม่มีข้อมูลให้ export','red'); return; }
     const data = rows.map(r=>({
@@ -1743,6 +1722,7 @@ async function pageStretchReceiveForm(app, { doc_no }) {
   window.submitReceive = async () => {
     if (window._recvBlocks.length===0) { toast('กรุณาสแกน/เพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
     if (!$('rc_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้รับ','red'); return; }
+    if (!empFieldsValid('rc_emp')) return;
     const req = reqTension(window._recvBlocks.length), done = doneTension();
     if (done < req) { toast(`กรุณากรอกความตึงอย่างน้อย ${req} ช่อง (กรอกแล้ว ${done})`,'red'); alarmBeep(); updateTensionNote(); return; }
     const fromDept = deptVal('rc_from','rc_from_other');
@@ -1809,33 +1789,39 @@ async function pageExternalStretchReceiveResult(app, {doc_no}) {
 async function pageExternalDatabase(app) {
   const { data: sendAll } = await api('/api/stretch-send-rows');
   const { data: recvAll } = await api('/api/stretch-receive-rows');
-  // แสดงเฉพาะใบส่งที่ยังไม่ได้รับ — ใบที่รับแล้วย้ายไปแสดงในตารางรับ (DB4) และค้นได้ที่ "บล็อกค้างส่งคืน"
-  const send3 = sendAll.filter(r => r.status !== 'received').map(r => ({ ...r, internal_codes:'-', revisions:'-', color_orders:'-', receiver_name:'-', storage_location:'-', remarks:'-' }));
+  const send3 = sendAll.filter(r => r.status !== 'received');
   const passLbl = v => v===1?'ผ่าน':v===0?'ไม่ผ่าน':'-';
+  const back = { page: 'externalDatabase', params: {} };
+  // DB3 (ส่ง) → การ์ดจัดกลุ่มตามใบส่ง OU
+  const sendDocs = dbBuildDocs(send3, {
+    date: r => fmtDate(r.date), block: r => r.block_no, blockRight: r => r.size_label || '',
+    step: () => 'รอรับ', stepClass: () => 'sp-amber',
+    staff: r => [{ n: 1, name: r.sender_name }],
+    meta: r => [{ label: 'หน่วยงานที่ส่ง', value: r.from_dept || '-' }, { label: 'หน่วยงานที่รับ', value: r.to_dept || '-' }],
+    blocksTitle: 'บล็อกที่ส่ง',
+  });
+  // DB4 (รับ) → การ์ดจัดกลุ่มตามใบรับ IN (อ้างอิง OU)
+  const recvDocs = dbBuildDocs(recvAll, {
+    date: r => fmtDate(r.date), block: r => r.block_no,
+    blockRight: r => [r.size_label, r.tension_value!=null?('ตึง '+r.tension_value):''].filter(Boolean).join(' · '),
+    step: () => 'รับแล้ว', stepClass: () => 'sp-green',
+    staff: r => [{ n: 1, name: r.receiver_name }],
+    meta: r => [{ label: 'อ้างอิงใบส่ง (OU)', value: r.ref_doc_no || '-' }, { label: 'หน่วยงานที่ส่ง', value: r.from_dept || '-' }, { label: 'หน่วยงานที่รับ', value: r.to_dept || '-' }],
+    blocksTitle: 'บล็อกที่รับ',
+  });
+  dbRegister(sendDocs, back); dbRegister(recvDocs, back);
   app.innerHTML = `
     <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>🗄️ ฐานข้อมูลรับส่งภายนอก</h1></div>
     <div class="page">
-      <div class="card"><div class="row gap-sm" style="align-items:center;margin-bottom:.6rem">
-        <span class="card-title flex1" style="margin:0;border:none;padding:0">📤 ตารางส่งบล็อกขึงผ้า (DATA BASE 3)</span>
-        <button class="btn-success btn-sm" onclick="exportExtDB('send')">⬇️ Excel</button>
-      </div>${db3TableHtml(send3)}</div>
-
-      <div class="card"><div class="row gap-sm" style="align-items:center;margin-bottom:.6rem">
-        <span class="card-title flex1" style="margin:0;border:none;padding:0">📥 ตารางรับบล็อกขึงผ้า (DATA BASE 4)</span>
-        <button class="btn-success btn-sm" onclick="exportExtDB('recv')">⬇️ Excel</button>
-      </div>
-        <div class="table-scroll"><table class="db1"><thead><tr>
-          <th>วันที่</th><th>เลขที่เอกสาร (รับ)</th><th>อ้างอิงใบส่ง (OU)</th><th>เลขที่บล็อก</th><th>ขนาดเฟรม</th><th>เบอร์ผ้า</th><th>ความตึง (นิวตัน)</th><th>บล็อกบิดงอ</th><th>ขนาดเฟรม</th>
-        </tr></thead><tbody>${recvAll.length?recvAll.map(r=>`<tr>
-          <td>${fmtDate(r.date)}</td><td><strong>${r.doc_no}</strong></td><td>${r.ref_doc_no?`<strong style="color:var(--primary)">${r.ref_doc_no}</strong>`:'-'}</td><td><strong>${r.block_no}</strong></td>
-          <td>${r.size_label||'-'}</td><td>${r.fabric_no||'-'}</td><td>${r.tension_value ?? '-'}</td>
-          <td>${passLbl(r.twist_pass)}</td><td>${passLbl(r.frame_pass)}</td>
-        </tr>`).join(''):`<tr><td colspan="9" class="no-data">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>
-      </div>
+      ${dbCardHtml({ id:'exdb3', title:'📤 ตารางส่งบล็อกขึงผ้า (DB3)', staffLabel:'ผู้ส่ง', exportFn:'exportExtSend' })}
+      ${dbCardHtml({ id:'exdb4', title:'📥 ตารางรับบล็อกขึงผ้า (DB4)', staffLabel:'ผู้รับ', exportFn:'exportExtRecv' })}
     </div>`;
+  dbCardWire('exdb3', sendDocs); dbCardWire('exdb4', recvDocs);
+  window.exportExtSend = () => window.exportExtDB('send');
+  window.exportExtRecv = () => window.exportExtDB('recv');
   window.exportExtDB = (kind) => {
     if (kind==='send') {
-      const data = send3.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'รหัสภายใน':r.internal_codes,'หน่วยงาน':r.from_dept,'ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'หน่วยงานถึง':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remarks,'สถานะ':r.status==='received'?'':'รอรับ'}));
+      const data = send3.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'หน่วยงาน':r.from_dept,'ผู้ส่ง':r.sender_name,'หน่วยงานถึง':r.to_dept,'ขนาดเฟรม':r.size_label||'-','สถานะ':'รอรับ'}));
       styledXlsx(data,'DB3','ตารางส่งบล็อกขึงผ้า.xlsx');
     } else {
       const data = recvAll.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร(รับ)':r.doc_no,'อ้างอิงใบส่ง(OU)':r.ref_doc_no||'-','เลขที่บล็อก':r.block_no,'ขนาดเฟรม':r.size_label,'เบอร์ผ้า':r.fabric_no,'ความตึง':r.tension_value,'บล็อกบิดงอ':passLbl(r.twist_pass),'ขนาดเฟรม(ตรวจ)':passLbl(r.frame_pass)}));
@@ -2684,18 +2670,20 @@ function deptVal(selId, otherId) {
 }
 
 let _empLookupTimer = null;
-async function lookupEmp(input, nameId) {
+// ตรวจรหัสพนักงานกับรายชื่อใน dropdown (master.employees) — บังคับให้รับเฉพาะรหัสที่มีในรายการ
+function lookupEmp(input, nameId) {
   const code = input.value.trim();
   const el = document.getElementById(nameId);
-  if (!el) return;
-  if (!code) { el.textContent = ''; el.style.color = ''; return; }
-  try {
-    const { data } = await api(`/api/employee/${code}`);
-    el.textContent = '✓ ' + data.fullname;
-    el.style.color = 'var(--green)';
-  } catch {
-    el.textContent = '❌ ไม่พบรหัสพนักงาน';
-    el.style.color = 'var(--red)';
+  input.dataset.emp = '1';            // ทำเครื่องหมายว่าเป็นช่องรหัสพนักงาน (ให้ตัวเช็คตอน blur รู้จัก)
+  input.dataset.nameid = nameId || '';
+  if (!code) { input.dataset.valid = ''; if (el) { el.textContent = ''; el.style.color = ''; } return; }
+  const emp = (master.employees || []).find(e => String(e.emp_code) === code);
+  if (emp) {
+    input.dataset.valid = '1';
+    if (el) { el.textContent = '✓ ' + (emp.fullname || ((emp.firstname||'') + ' ' + (emp.lastname||'')).trim()); el.style.color = 'var(--green)'; }
+  } else {
+    input.dataset.valid = '0';
+    if (el) { el.textContent = '❌ ไม่พบรหัสพนักงานในรายการ'; el.style.color = 'var(--red)'; }
     // เตือนเสียงเมื่อพิมพ์หยุดแล้วยังไม่พบ (debounce กันเสียงรัวตอนพิมพ์)
     clearTimeout(_empLookupTimer);
     _empLookupTimer = setTimeout(() => {
@@ -2704,6 +2692,35 @@ async function lookupEmp(input, nameId) {
   }
 }
 window.lookupEmp = lookupEmp;
+
+// บังคับ: เมื่อออกจากช่องรหัสพนักงาน ถ้าค่าไม่ตรงกับรายการ → ล้างค่า + เสียงเตือน (ทั้งพิมพ์และสแกน)
+document.addEventListener('focusout', e => {
+  const input = e.target;
+  if (!input || input.dataset?.emp !== '1') return;
+  const code = input.value.trim();
+  if (!code) return;
+  const ok = (master.employees || []).some(x => String(x.emp_code) === code);
+  if (!ok) {
+    alarmBeep();
+    toast('❌ ต้องเลือกรหัสพนักงานจากรายการเท่านั้น: ' + code, 'red');
+    input.value = '';
+    input.dataset.valid = '';
+    const el = input.dataset.nameid && document.getElementById(input.dataset.nameid);
+    if (el) { el.textContent = ''; el.style.color = ''; }
+  }
+});
+// ตรวจว่าช่องรหัสพนักงานทุกช่องในฟอร์มมีค่าถูกต้อง (ใช้ก่อนบันทึก)
+function empFieldsValid(...ids) {
+  for (const id of ids) {
+    const inp = $(id); if (!inp) continue;
+    const code = (inp.value || '').trim();
+    if (code && !(master.employees || []).some(x => String(x.emp_code) === code)) {
+      alarmBeep(); toast('❌ รหัสพนักงานไม่ถูกต้อง: ' + code, 'red'); inp.focus(); return false;
+    }
+  }
+  return true;
+}
+window.empFieldsValid = empFieldsValid;
 window.openScan = openScan;
 
 function infoRow(label, value) {
@@ -2790,6 +2807,114 @@ function pagedTable(rows, renderRow, colspan, tbodyId, pagerId, size = 10) {
   window['__pg_'+tbodyId] = (p) => { page = p; paint(); };
   paint();
 }
+
+// ══════════════════════════════════════════════════════
+//  ตารางฐานข้อมูลแบบการ์ด (จัดกลุ่มตามเลขที่เอกสาร) + คลิกดูรายละเอียด
+//  ใช้ร่วมกันทั้ง: รับส่งภายนอก (DB3/DB4), รับส่งภายใน, ร้องขออัดบล็อก
+// ══════════════════════════════════════════════════════
+let _dbDetails = {};        // เก็บข้อมูลรายละเอียดรายเอกสาร (สำหรับหน้ารายละเอียด)
+let _dbDetailBack = null;   // ปุ่มย้อนกลับของหน้ารายละเอียด
+
+// จัดกลุ่มแถว (1 แถว = 1 บล็อก) ให้เป็นเอกสาร พร้อมข้อมูลครบสำหรับตาราง + รายละเอียด
+// cfg: { date, block, blockRight?, step?, stepClass?, staff?, meta?, blocksTitle? }
+function dbBuildDocs(rows, cfg) {
+  const map = new Map();
+  rows.forEach(r => {
+    const k = r.doc_no || '-';
+    if (!map.has(k)) map.set(k, { doc_no: k, _r: r, blocks: [] });
+    map.get(k).blocks.push({ no: cfg.block(r), right: cfg.blockRight ? cfg.blockRight(r) : '' });
+  });
+  return [...map.values()].map(g => ({
+    doc_no: g.doc_no,
+    date: cfg.date ? cfg.date(g._r) : '',
+    step: cfg.step ? cfg.step(g._r) : '',
+    stepClass: cfg.stepClass ? cfg.stepClass(g._r) : 'sp-blue',
+    staff: cfg.staff ? cfg.staff(g._r) : [],
+    meta: cfg.meta ? cfg.meta(g._r) : [],
+    blocksTitle: cfg.blocksTitle || 'เลขที่บล็อก',
+    blocks: g.blocks,
+  }));
+}
+
+// เก็บ detail ของ docs ไว้เปิดภายหลัง
+function dbRegister(docs, back) { _dbDetailBack = back; docs.forEach(d => { _dbDetails[d.doc_no] = d; }); }
+
+// HTML: หัวตาราง (grid)
+function dbHeadHtml(staffLabel) {
+  return `<div class="dbc-row dbc-head">
+    <div>เลขที่เอกสาร</div><div>วันที่</div><div>ข้อมูลบล็อก</div><div>ขั้นตอน</div><div>${staffLabel||'ผู้ปฏิบัติงาน'}</div>
+  </div>`;
+}
+// HTML: หนึ่งแถวการ์ด
+function dbRowHtml(d) {
+  const chips = d.blocks.slice(0, 12).map(b => `<span class="dbc-chip" onclick="openDbDetail('${(d.doc_no||'').replace(/'/g,'')}')">${b.no}</span>`).join('')
+    + (d.blocks.length > 12 ? `<span class="dbc-more">+${d.blocks.length-12}</span>` : '');
+  const staff = (d.staff||[]).length
+    ? d.staff.map(s => `<div class="dbc-staffrow"><span class="dbc-num">${s.n}</span><span>${s.name||'-'}</span></div>`).join('')
+    : '<span class="dbc-dim">-</span>';
+  return `<div class="dbc-row">
+    <div class="dbc-doccell"><div class="dbc-no">${d.doc_no}</div><button class="dbc-detail" onclick="openDbDetail('${(d.doc_no||'').replace(/'/g,'')}')">ดูรายละเอียด ›</button></div>
+    <div><span class="dbc-datepill">${d.date||'-'}</span></div>
+    <div><div class="dbc-chips">${chips||'<span class="dbc-dim">-</span>'}</div><div class="dbc-cnt">${d.blocks.length} บล็อก</div></div>
+    <div>${d.step?`<span class="dbc-step ${d.stepClass}">${d.step}</span>`:'<span class="dbc-dim">-</span>'}</div>
+    <div class="dbc-staff">${staff}</div>
+  </div>`;
+}
+// สร้างการ์ดตาราง 1 ชุด (หัวข้อ + Excel + แถว + แบ่งหน้า) — คืน HTML แล้วค่อย wire ด้วย dbCardWire
+function dbCardHtml(cfg) {
+  // cfg: { id, title, staffLabel, exportFn }
+  return `<div class="card">
+    <div class="row gap-sm" style="align-items:center;margin-bottom:.7rem">
+      <span class="card-title flex1" style="margin:0;border:none;padding:0">${cfg.title} <span class="dbc-badge" id="${cfg.id}_cnt">0</span></span>
+      ${cfg.exportFn?`<button class="btn-success btn-sm" onclick="${cfg.exportFn}()">⬇️ Excel</button>`:''}
+    </div>
+    <div class="dbc-scroll">${dbHeadHtml(cfg.staffLabel)}<div id="${cfg.id}_rows"></div></div>
+    <div class="pager" id="${cfg.id}_pager"></div>
+  </div>`;
+}
+// แบ่งหน้า 10/หน้า ให้การ์ดตาราง
+function dbCardWire(id, docs) {
+  const cntEl = document.getElementById(id+'_cnt'); if (cntEl) cntEl.textContent = docs.length;
+  let page = 1; const size = 10;
+  const paint = () => {
+    const pages = Math.max(1, Math.ceil(docs.length/size)); if (page>pages) page=pages;
+    const slice = docs.slice((page-1)*size, (page-1)*size+size);
+    const box = document.getElementById(id+'_rows'); if (!box) return;
+    box.innerHTML = slice.length ? slice.map(dbRowHtml).join('') : `<div class="no-data" style="padding:1.5rem">ไม่มีข้อมูล</div>`;
+    const pg = document.getElementById(id+'_pager');
+    if (pg) pg.innerHTML = `<button class="btn-sm btn-secondary" ${page<=1?'disabled':''} onclick="__dbpg_${id}(${page-1})">‹ ก่อนหน้า</button>
+      <span class="pager-info">หน้า ${page} / ${pages} · ${docs.length} รายการ</span>
+      <button class="btn-sm btn-secondary" ${page>=pages?'disabled':''} onclick="__dbpg_${id}(${page+1})">ถัดไป ›</button>`;
+  };
+  window['__dbpg_'+id] = (p) => { page=p; paint(); };
+  paint();
+}
+
+// เปิดหน้ารายละเอียดเอกสาร (แบบรูปที่ 1)
+window.openDbDetail = function (doc_no) {
+  const d = _dbDetails[doc_no]; if (!d) return;
+  const app = document.getElementById('app');
+  const back = _dbDetailBack || { page: 'home', params: {} };
+  const metaCells = [
+    { label: 'วันที่', value: d.date || '-' },
+    ...(d.step ? [{ label: 'ขั้นตอน', value: d.step }] : []),
+    ...(d.meta || []),
+  ];
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('${back.page}',${JSON.stringify(back.params||{})})">‹</button><h1>รายละเอียดเอกสาร</h1></div>
+    <div class="page">
+      <div class="card dbd-head">
+        <div class="dbd-no"><span class="dbd-bar"></span>${d.doc_no}</div>
+        <div class="dbd-grid">${metaCells.map(m=>`<div class="dbd-meta"><div class="dbd-lbl">${m.label}</div><div class="dbd-val">${m.value||'-'}</div></div>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">${d.blocksTitle} (${d.blocks.length} รายการ)</div>
+        <div class="dbd-blocks">${d.blocks.map((b,i)=>`
+          <div class="dbd-brow"><span class="dbd-bnum">${i+1}</span><span class="dbd-bno">${b.no}</span><span class="dbd-bright">${b.right||''}</span></div>`).join('')}</div>
+      </div>
+    </div>`;
+  window.scrollTo(0,0);
+};
 
 function toast(msg, type = 'ok') {
   const el = document.getElementById('toast');
