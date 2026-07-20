@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── version (ใช้ยืนยันว่า Docker และ Railway เป็นชุดเดียวกัน) ──
-const APP_VERSION = 'v2026.07.12-wake';
+const APP_VERSION = 'v2026.07.13-pending';
 
 // ── state ──
 let master = {};
@@ -27,7 +27,7 @@ function canAdmin(){ return isRole('administrator'); }                    // จ
 // หน้าที่พนักงานทั่วไปเข้าไม่ได้
 const GATED_PAGES = {
   clean:'tables', internalDatabase:'tables', blocks:'tables',
-  externalStretchSendResult:'tables', externalStretchReceiveResult:'tables', pressDB3:'tables',
+  externalStretchSendResult:'tables', externalStretchReceiveResult:'tables', pressDB3:'tables', externalDatabase:'tables',
   masterData:'manage', userManagement:'admin',
 };
 function allowedPage(page){
@@ -143,8 +143,10 @@ function renderPage(page, params = {}) {
     external: pageExternal,
     externalStretchSend: pageExternalStretchSend,
     externalStretchReceive: pageExternalStretchReceive,
+    stretchReceiveForm: pageStretchReceiveForm,
     externalStretchSendResult: pageExternalStretchSendResult,
     externalStretchReceiveResult: pageExternalStretchReceiveResult,
+    externalDatabase: pageExternalDatabase,
     search: pageSearch,
     blocks: pageBlocks,
     masterData: pageMasterData,
@@ -152,8 +154,17 @@ function renderPage(page, params = {}) {
   (pages[page] || pageHome)(app, params);
   updateBottomNav(page);
   // แสดงเลขที่เอกสารถัดไปจริงในช่องที่มี data-docno (แทนคำว่า "อัตโนมัติ")
-  document.querySelectorAll('[data-docno]').forEach(el => {
-    api('/api/next-docno/' + el.dataset.docno).then(r => { el.textContent = r.data.doc_no; }).catch(() => {});
+  fillDocNos();
+}
+
+// เติมเลขที่เอกสารถัดไปจริง (Auto Run) ในทุกช่องที่มี data-docno — ใช้ได้ทุกสิทธิ์
+// เรียกซ้ำได้หลังแทรก DOM แบบ async (เช่นฟอร์มที่โหลดข้อมูลก่อนแสดงผล)
+function fillDocNos(root) {
+  (root || document).querySelectorAll('[data-docno]').forEach(el => {
+    if (el.dataset.docnoDone) return;
+    api('/api/next-docno/' + el.dataset.docno)
+      .then(r => { el.textContent = r.data.doc_no; el.dataset.docnoDone = '1'; })
+      .catch(() => {});
   });
 }
 
@@ -179,6 +190,52 @@ document.getElementById('app').insertAdjacentHTML('afterend', `
   <button id="nav-blocks" onclick="renderPage('blocks')"><span class="icon">📋</span>ทะเบียน</button>
 </nav>`);
 if (!currentUser) document.querySelector('.bottomnav').style.display = 'none';
+
+// ── ซ่อนเมนูล่างขณะคีย์ข้อมูล (กันมือพนักงานสัมผัสโดนตอนพิมพ์) ──
+// เมื่อโฟกัสช่องกรอก (input/select/textarea) จะเลื่อนเมนูล่างลงไปซ่อน แล้วโผล่กลับเมื่อเลิกพิมพ์
+(function () {
+  const nav = () => document.querySelector('.bottomnav');
+  const isField = el => el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
+  let hideTimer = null;
+  document.addEventListener('focusin', e => {
+    if (!isField(e.target)) return;
+    clearTimeout(hideTimer);
+    nav()?.classList.add('nav-typing');
+  });
+  document.addEventListener('focusout', e => {
+    if (!isField(e.target)) return;
+    clearTimeout(hideTimer);
+    // หน่วงเล็กน้อยเผื่อย้ายไปช่องถัดไป จะได้ไม่กระพริบ
+    hideTimer = setTimeout(() => { if (!isField(document.activeElement)) nav()?.classList.remove('nav-typing'); }, 250);
+  });
+})();
+
+// ── ปุ่มติดตั้งแอป (PWA) — โผล่เมื่อเบราว์เซอร์รองรับการติดตั้ง ──
+// หมายเหตุ: ต้องเป็น HTTPS ที่ใบรับรองเชื่อถือได้ (ติดตั้ง root CA บนมือถือ) เบราว์เซอร์จึงจะเสนอให้ติดตั้ง
+let _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstall = e;
+  document.getElementById('installFab')?.classList.remove('hidden');
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstall = null;
+  document.getElementById('installFab')?.classList.add('hidden');
+  toast('ติดตั้งแอปสำเร็จ 🎉');
+});
+window.promptInstall = async () => {
+  if (!_deferredInstall) { toast('เบราว์เซอร์ยังไม่พร้อมติดตั้ง (ต้องติดตั้งใบรับรอง SSL ก่อน)','red'); return; }
+  _deferredInstall.prompt();
+  const { outcome } = await _deferredInstall.userChoice;
+  if (outcome === 'accepted') document.getElementById('installFab')?.classList.add('hidden');
+  _deferredInstall = null;
+};
+// ถ้าเปิดในโหมดแอปอยู่แล้ว ไม่ต้องแสดงปุ่มติดตั้ง
+document.getElementById('app').insertAdjacentHTML('afterend',
+  `<button id="installFab" class="install-fab hidden" onclick="promptInstall()">⬇️ ติดตั้งแอป</button>`);
+if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+  document.getElementById('installFab')?.remove();
+}
 
 // ── HOME ──
 function pageHome(app) {
@@ -671,7 +728,7 @@ function pagePressNew(app) {
   function renderFilmRows() {
     $('film_rows').innerHTML = window._pressFilms.map((f,i)=>`
       <tr>
-        <td><button class="scan-btn btn-sm" onclick="openScan(v=>{const fl=parseFilmQR(v,window._pressFilms[${i}]);renderFilmRowsG();filmScanFeedback(fl,['internal_code','color','fabric']);},{raw:true})">📷</button></td>
+        <td><button class="scan-btn btn-sm" onclick="openScan(v=>filmScanDedup(window._pressFilms,${i},v,['internal_code','color','fabric'],renderFilmRowsG),{raw:true})">📷</button></td>
         <td><input value="${f.internal_code}" oninput="window._pressFilms[${i}].internal_code=this.value" placeholder="H-E-26-01" style="min-width:110px"/></td>
         <td><input value="${f.color_order}" oninput="window._pressFilms[${i}].color_order=this.value" placeholder="1" style="width:56px"/></td>
         <td><input value="${f.revision}" oninput="window._pressFilms[${i}].revision=this.value" placeholder="1" style="width:56px"/></td>
@@ -855,13 +912,13 @@ async function pagePressInspect(app, {doc_no}) {
         <div class="card-title">ข้อมูลชุดที่ 2 — ผลการตรวจรับ</div>
         <div class="table-scroll">
           <table class="insp">
-            <thead><tr><th>สิ่งที่ต้องควบคุม</th><th>เกณฑ์</th><th>วิธี</th><th>ค่าที่วัดได้</th><th>ผ่าน</th><th>ไม่ผ่าน</th></tr></thead>
+            <thead><tr><th>สิ่งที่ต้องควบคุม</th><th>เกณฑ์</th><th>วิธี</th><th>ค่าที่วัดได้</th><th>ผ่าน/ไม่ผ่าน <span class="req">*</span></th><th></th></tr></thead>
             <tbody>
               ${INSPECT_ROWS.map(r=>`<tr>
-                <td>${r.label}</td>
+                <td>${r.label} <span class="req">*</span></td>
                 <td class="sub">${r.std}</td>
                 <td class="sub">${r.method}</td>
-                <td>${r.value?`<input id="${r.value}" type="number" step="0.1" placeholder="${r.unit}" style="width:80px"/>`:'-'}</td>
+                <td>${r.value?`<input id="${r.value}" type="number" step="0.1" placeholder="${r.unit}" style="width:80px"/> <span class="req">*</span>`:'-'}</td>
                 <td class="ctr"><button class="pfbtn" id="pf_pass_${r.key}" onclick="setCheck('${r.key}',1)"></button></td>
                 <td class="ctr"><button class="pfbtn" id="pf_fail_${r.key}" onclick="setCheck('${r.key}',0)"></button></td>
               </tr>`).join('')}
@@ -940,9 +997,19 @@ async function pagePressInspect(app, {doc_no}) {
     toast('บันทึกแล้ว — กลับสู่ Folder บล็อกรออัด');
     renderPage('press',{filter:'pending'});
   };
+  function validateInspect() {
+    const st = window._inspState;
+    for (const r of INSPECT_ROWS) {
+      if (r.value && !$(r.value).value.trim()) { toast('กรุณากรอกค่าที่วัดได้: '+r.label,'red'); alarmBeep(); return false; }
+      if (st[r.key] !== 0 && st[r.key] !== 1) { toast('กรุณาเลือก ผ่าน/ไม่ผ่าน: '+r.label,'red'); alarmBeep(); return false; }
+    }
+    return true;
+  }
   window.summitInspect = async (docNo) => {
     const e1 = $('i_emp1').value.trim(), e2 = $('i_emp2').value.trim();
     if (!e1 || !e2) { toast('ต้องระบุ/สแกนพนักงาน BL ทั้ง 2 คน ก่อนจบขั้นตอน','red'); return; }
+    if (!$('i_new_block').value.trim()) { toast('กรุณาระบุเลขที่บล็อกใหม่','red'); return; }
+    if (!validateInspect()) return;
     // บันทึกครั้งสุดท้าย (พร้อมชื่อผู้ปฏิบัติ + วันเวลาที่กด SUMMIT) แล้วจบขั้นตอน
     await api(`/api/press-inspect?doc_no=${encodeURIComponent(docNo)}`,'POST',collectBody());
     await api(`/api/press-summit?doc_no=${encodeURIComponent(docNo)}`,'POST',{});
@@ -1227,7 +1294,7 @@ function pageInternalPrepare(app) {
         </div>
         <div class="table-scroll"><table class="filmtbl"><thead><tr><th></th><th>รหัสภายใน</th><th>ลำดับสี</th><th>Revision</th><th></th></tr></thead><tbody>
           ${b.films.map((f,fi)=>`<tr>
-            <td><button class="scan-btn btn-sm" onclick="openScan(v=>{const fl=parseFilmQR(v,window._prepBlocks[${bi}].films[${fi}]);renderPrepRowsG();filmScanFeedback(fl,['internal_code','color']);},{raw:true})">📷</button></td>
+            <td><button class="scan-btn btn-sm" onclick="openScan(v=>filmScanDedup(window._prepBlocks[${bi}].films,${fi},v,['internal_code','color'],renderPrepRowsG),{raw:true})">📷</button></td>
             <td><input value="${f.internal_code}" oninput="setPrepFilm(${bi},${fi},'internal_code',this.value)" placeholder="H-E-26-01" style="min-width:100px"/></td>
             <td><input value="${f.color_order}" oninput="setPrepFilm(${bi},${fi},'color_order',this.value)" placeholder="1" style="width:56px"/></td>
             <td><input value="${f.revision}" oninput="setPrepFilm(${bi},${fi},'revision',this.value)" placeholder="1" style="width:56px"/></td>
@@ -1467,7 +1534,10 @@ function pageExternalStretchSend(app) {
           <tr><td class="lbl">รหัสพนักงาน BL ผู้ส่ง <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="sd_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'sd_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('sd_emp').value=v;lookupEmp($('sd_emp'),'sd_emp_n')})">📷</button></div>
             <div id="sd_emp_n" class="emp-name"></div></td></tr>
-          <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in"><select id="sd_to"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in">
+            <select id="sd_to" onchange="toggleDeptOther('sd_to','sd_to_other_wrap','sd_to_other')"><option value="KTE">KTE</option><option value="NOVA">NOVA</option><option value="__other__">อื่นๆ...</option></select>
+            <div id="sd_to_other_wrap" class="dept-other"><input id="sd_to_other" placeholder="ระบุหน่วยงาน (บังคับกรอก)"/></div>
+          </td></tr>
         </table>
       </div>
       <div class="card">
@@ -1504,9 +1574,11 @@ function pageExternalStretchSend(app) {
   window.submitSend = async () => {
     if (window._sendBlocks.length===0) { toast('กรุณาสแกน/เพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
     if (!$('sd_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้ส่ง','red'); return; }
+    const toDept = deptVal('sd_to','sd_to_other');
+    if (!toDept) { toast('กรุณาระบุหน่วยงานที่รับ','red'); alarmBeep(); return; }
     const body = {
       date: todayISO(), time: nowTime(),
-      from_dept: $('sd_from').value, to_dept: $('sd_to').value,
+      from_dept: $('sd_from').value, to_dept: toDept,
       sender_emp: $('sd_emp').value.trim(),
       blocks: window._sendBlocks.map(b=>b.block_no),
     };
@@ -1516,18 +1588,23 @@ function pageExternalStretchSend(app) {
   };
 }
 
+function ouStatusBadge(status) {
+  // แสดงเฉพาะสถานะ "รอรับ" — เมื่อรับแล้วไม่ต้องแสดง
+  return status === 'received' ? '-' : `<span class="st-badge st-wait">● รอรับ</span>`;
+}
 function db3RowHtml(r) {
   return `<tr>
     <td>${fmtDate(r.date)}</td><td><strong>${r.doc_no}</strong></td><td><strong>${r.block_no}</strong></td>
     <td>${r.internal_codes||'-'}</td><td>${r.from_dept||'-'}</td><td>${r.sender_name||'-'}</td>
     <td>${r.revisions||'-'}</td><td>${r.color_orders||'-'}</td><td>${r.receiver_name||'-'}</td>
     <td>${r.to_dept||'-'}</td><td>${r.storage_location||'-'}</td><td>${r.remarks||'-'}</td>
+    <td>${ouStatusBadge(r.status)}</td>
   </tr>`;
 }
 function db3TableHtml(rows) {
   return `<div class="table-scroll"><table class="db1"><thead><tr>
-    <th>วันที่</th><th>เลขที่เอกสาร</th><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>หน่วยงาน</th><th>ผู้ส่ง</th><th>Revision</th><th>สี</th><th>ผู้รับ</th><th>หน่วยงาน</th><th>ที่จัดเก็บ</th><th>หมายเหตุ</th>
-  </tr></thead><tbody>${rows.length?rows.map(db3RowHtml).join(''):`<tr><td colspan="12" class="no-data">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>`;
+    <th>วันที่</th><th>เลขที่เอกสาร</th><th>เลขที่บล็อก</th><th>รหัสภายใน</th><th>หน่วยงาน</th><th>ผู้ส่ง</th><th>Revision</th><th>สี</th><th>ผู้รับ</th><th>หน่วยงาน</th><th>ที่จัดเก็บ</th><th>หมายเหตุ</th><th>สถานะ</th>
+  </tr></thead><tbody>${rows.length?rows.map(db3RowHtml).join(''):`<tr><td colspan="13" class="no-data">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>`;
 }
 
 async function pageExternalStretchSendResult(app, {doc_no}) {
@@ -1545,20 +1622,62 @@ async function pageExternalStretchSendResult(app, {doc_no}) {
 }
 
 // ── รับบล็อกขึงผ้า ──
-function pageExternalStretchReceive(app) {
-  window._recvBlocks = [];
-  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
-  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+// รับบล็อกขึงผ้า — แสดงรายการใบส่ง (OU) ที่รอรับ ให้คลิกเลือกก่อนจึงเข้าฟอร์มรับ
+async function pageExternalStretchReceive(app) {
   app.innerHTML = `
     <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>รับบล็อกขึงผ้า</h1></div>
     <div class="page">
+      <div class="rc-hint"><span class="rc-hint-ic">📥</span><span>เลือกเลขที่ใบส่ง (OU) ที่ต้องการรับ ระบบจะออกเลขที่รับ (IN) ใหม่โดยอ้างอิงใบส่งนั้นให้อัตโนมัติ</span></div>
+      <div id="rc_pending" class="rc-list"><div class="rc-skel"></div><div class="rc-skel"></div></div>
+    </div>`;
+  try {
+    const { data } = await api('/api/stretch-send-pending');
+    if (!data.length) {
+      $('rc_pending').innerHTML = `<div class="rc-empty"><div class="rc-empty-ic">📭</div><div class="rc-empty-t">ไม่มีใบส่งที่รอรับ</div><div class="rc-empty-s">เมื่อมีการส่งบล็อกขึงผ้า รายการจะแสดงที่นี่</div></div>`;
+      return;
+    }
+    $('rc_pending').innerHTML = data.map(d=>{
+      const n = (d.blocks||[]).length;
+      return `
+      <button class="rc-card" onclick="renderPage('stretchReceiveForm',{doc_no:'${d.doc_no}'})">
+        <div class="rc-badge"><span class="rc-badge-n">${n}</span><span class="rc-badge-l">บล็อก</span></div>
+        <div class="rc-main">
+          <div class="rc-no">${d.doc_no}</div>
+          <div class="rc-meta"><span class="rc-chip">👤 ${d.sender_name||'-'}</span><span class="rc-chip">🏢 ${d.from_dept||'-'} → ${d.to_dept||'-'}</span></div>
+          <div class="rc-date">📅 ส่งเมื่อ ${d.doc_date||d.date||'-'}</div>
+        </div>
+        <div class="rc-go">รับ ›</div>
+      </button>`;
+    }).join('');
+  } catch { $('rc_pending').innerHTML = `<div class="rc-empty"><div class="rc-empty-ic">⚠️</div><div class="rc-empty-t">โหลดข้อมูลไม่สำเร็จ</div></div>`; }
+}
+
+// ฟอร์มรับบล็อกขึงผ้า อ้างอิงใบส่ง OU ที่เลือก
+async function pageStretchReceiveForm(app, { doc_no }) {
+  window._recvBlocks = [];
+  window._recvRefBlocks = [];   // เลขบล็อกที่อยู่ในใบส่ง OU นี้ (ใช้ตรวจสอบ)
+  const deptOpts = master.departments.map(d=>`<option value="${d.id}">${d.id}</option>`).join('');
+  const empOpts = master.employees.map(e=>`<option value="${e.emp_code}">${e.emp_code} ${e.fullname}</option>`).join('');
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('externalStretchReceive')">‹</button><h1>รับบล็อก · ${doc_no}</h1></div>
+    <div class="page"><div id="srf_body">กำลังโหลด...</div></div>`;
+  let ou;
+  try { const { data } = await api('/api/stretch-send-doc?doc_no='+encodeURIComponent(doc_no)); ou = data; }
+  catch { $('srf_body').innerHTML = `<div class="no-data" style="padding:2rem;text-align:center">ไม่พบใบส่ง ${doc_no}</div>`; return; }
+  window._recvRefBlocks = (ou.blocks||[]).map(b=>b.block_no);
+
+  $('srf_body').innerHTML = `
       <datalist id="empList">${empOpts}</datalist>
       <div class="card">
         <table class="ftable">
-          <tr><td class="lbl">เลขที่เอกสาร</td><td class="auto" id="rc_docno" data-docno="stretch_receive">กำลังออกเลข...</td></tr>
+          <tr><td class="lbl">เลขที่ใบส่งอ้างอิง</td><td class="auto" style="color:var(--primary);font-weight:700">${doc_no}</td></tr>
+          <tr><td class="lbl">เลขที่เอกสาร (รับ)</td><td class="auto" id="rc_docno" data-docno="stretch_receive">กำลังออกเลข...</td></tr>
           <tr><td class="lbl">วันที่</td><td class="auto">${todayStr()}</td></tr>
           <tr><td class="lbl">เวลา</td><td class="auto">${nowTime()} น.</td></tr>
-          <tr><td class="lbl">หน่วยงานที่ส่ง <span class="req">*</span></td><td class="in"><select id="rc_from"><option value="KTE">KTE</option><option value="NOVA">NOVA</option></select></td></tr>
+          <tr><td class="lbl">หน่วยงานที่ส่ง <span class="req">*</span></td><td class="in">
+            <select id="rc_from" onchange="toggleDeptOther('rc_from','rc_from_other_wrap','rc_from_other')"><option value="KTE">KTE</option><option value="NOVA">NOVA</option><option value="__other__">อื่นๆ...</option></select>
+            <div id="rc_from_other_wrap" class="dept-other"><input id="rc_from_other" placeholder="ระบุหน่วยงาน (บังคับกรอก)"/></div>
+          </td></tr>
           <tr><td class="lbl">หน่วยงานที่รับ <span class="req">*</span></td><td class="in"><select id="rc_to">${deptOpts}</select></td></tr>
           <tr><td class="lbl">รหัสพนักงาน BL ผู้รับ <span class="req">*</span></td><td class="in">
             <div class="row gap-sm"><input id="rc_emp" list="empList" class="flex1" placeholder="พิมพ์ / เลือก / สแกน" oninput="lookupEmp(this,'rc_emp_n')"/><button class="scan-btn" onclick="openScan(v=>{$('rc_emp').value=v;lookupEmp($('rc_emp'),'rc_emp_n')})">📷</button></div>
@@ -1567,29 +1686,40 @@ function pageExternalStretchReceive(app) {
       </div>
       <div class="card">
         <div class="row gap-sm" style="align-items:center">
-          <span class="card-title flex1" style="margin:0;border:none;padding:0">เลขที่บล็อก (<span id="rc_count">0</span>)</span>
+          <span class="card-title flex1" style="margin:0;border:none;padding:0">รับแล้ว <span id="rc_count">0</span> / ${window._recvRefBlocks.length} บล็อก</span>
           <button class="scan-btn" onclick="openScan(v=>addRecvBlock(v),{continuous:true})">📷 สแกนต่อเนื่อง</button>
         </div>
-        <p class="scan-hint" style="margin:.3rem 0 .6rem">สุ่มตรวจสอบความตึงบล็อก 10:1 (ความตึง 14-20 นิวตัน/ซม.) · เลขที่บล็อกห้ามซ้ำ</p>
+        <p class="scan-hint" style="margin:.3rem 0 .35rem">สแกน/พิมพ์เฉพาะเลขบล็อกที่อยู่ในใบส่ง ${doc_no} เท่านั้น · ห้ามซ้ำ</p>
+        <div class="rc-tension-note">🎯 สุ่มตรวจความตึง 10:1 — ต้องกรอกความตึงอย่างน้อย <strong id="rc_treq">1</strong> ช่อง (กรอกแล้ว <strong id="rc_tdone">0</strong> ช่อง)</div>
         <div class="row gap-sm mb"><input id="rc_block_in" class="flex1" placeholder="พิมพ์เลขบล็อก" onkeydown="if(event.key==='Enter'){addRecvBlock($('rc_block_in').value);event.preventDefault();}"/><button class="btn-secondary" onclick="addRecvBlock($('rc_block_in').value)">เพิ่ม</button></div>
         <div class="table-scroll"><table class="filmtbl"><thead><tr><th>เลขที่บล็อก</th><th>ขนาดเฟรม</th><th>เบอร์ผ้า</th><th>ความตึง</th><th>บิดงอ</th><th>ขนาดเฟรม</th><th></th></tr></thead><tbody id="rc_rows"></tbody></table></div>
       </div>
-      <button class="btn-primary" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="submitReceive()">SUMMIT</button>
-    </div>`;
+      <button class="btn-primary" style="width:100%;padding:.9rem;font-size:1.05rem" onclick="submitReceive()">SUMMIT</button>`;
+  fillDocNos($('srf_body'));   // Auto Run เลขที่เอกสารรับ (IN) หลังแทรกฟอร์มแบบ async
 
-  window.addRecvBlock = async (val) => {
+  // เก็บข้อมูล size/fabric ของแต่ละบล็อกในใบส่ง เพื่อใช้ตอนเพิ่มแถว
+  const ouMap = {}; (ou.blocks||[]).forEach(b=>{ ouMap[b.block_no] = { size_label:b.size_label||'-', fabric_no:b.fabric_no||'-' }; });
+
+  window.addRecvBlock = (val) => {
     val = (val||'').trim(); if (!val) return;
+    if (!window._recvRefBlocks.includes(val)) { toast('❌ บล็อก '+val+' ไม่มีในใบส่ง '+doc_no,'red'); alarmBeep(); $('rc_block_in').value=''; return; }
     if (window._recvBlocks.find(b=>b.block_no===val)) { toast('❌ เลขบล็อกซ้ำ: '+val,'red'); alarmBeep(); $('rc_block_in').value=''; return; }
-    let size='-', fabric='-';
-    try { const { data } = await api('/api/block/'+encodeURIComponent(val)); size = data.size_label||'-'; fabric = data.fabric_no||'-'; }
-    catch { toast('❌ ไม่พบเลขบล็อก '+val+' ในระบบ','red'); alarmBeep(); $('rc_block_in').value=''; return; }
-    window._recvBlocks.push({ block_no:val, size_label:size, fabric_no:fabric, tension_value:'', twist_pass:null, frame_pass:null });
+    const info = ouMap[val] || { size_label:'-', fabric_no:'-' };
+    window._recvBlocks.push({ block_no:val, size_label:info.size_label, fabric_no:info.fabric_no, tension_value:'', twist_pass:null, frame_pass:null });
     successBeep();
     $('rc_block_in').value = '';
     renderRecvRows();
   };
   window.removeRecvBlock = (i) => { window._recvBlocks.splice(i,1); renderRecvRows(); };
-  window.setRecvTension = (i, v) => { window._recvBlocks[i].tension_value = v; };
+  // จำนวนช่องความตึงที่ต้องกรอกตามหลัก 10:1 (ปัดขึ้นเป็นหลักสิบ) : ≤10→1, 11-20→2, 21-30→3 ...
+  const reqTension = (n) => Math.max(1, Math.ceil(n/10));
+  const doneTension = () => window._recvBlocks.filter(b => String(b.tension_value).trim() !== '' && !isNaN(parseFloat(b.tension_value))).length;
+  function updateTensionNote() {
+    const req = reqTension(window._recvBlocks.length), done = doneTension();
+    if ($('rc_treq')) $('rc_treq').textContent = req;
+    if ($('rc_tdone')) { $('rc_tdone').textContent = done; $('rc_tdone').style.color = done >= req ? 'var(--ok,#16a34a)' : 'var(--danger,#dc2626)'; }
+  }
+  window.setRecvTension = (i, v) => { window._recvBlocks[i].tension_value = v; updateTensionNote(); };
   window.setRecvCheck = (i, key, val) => {
     const b = window._recvBlocks[i];
     const next = (b[key]===val) ? null : val;
@@ -1606,16 +1736,21 @@ function pageExternalStretchReceive(app) {
       <td><button class="pfbtn" id="rc_frame_pass_pass_${i}" onclick="setRecvCheck(${i},'frame_pass',1)"></button><button class="pfbtn" id="rc_frame_pass_fail_${i}" onclick="setRecvCheck(${i},'frame_pass',0)"></button></td>
       <td><button class="btn-icon" onclick="removeRecvBlock(${i})">🗑️</button></td>
     </tr>`).join('') || `<tr><td colspan="7" class="no-data">ยังไม่มีบล็อก</td></tr>`;
-    // fix id collisions: use distinct ids per key
+    updateTensionNote();
   }
   renderRecvRows();
 
   window.submitReceive = async () => {
     if (window._recvBlocks.length===0) { toast('กรุณาสแกน/เพิ่มบล็อกอย่างน้อย 1 รายการ','red'); return; }
     if (!$('rc_emp').value.trim()) { toast('กรุณาระบุ/สแกนรหัสพนักงานผู้รับ','red'); return; }
+    const req = reqTension(window._recvBlocks.length), done = doneTension();
+    if (done < req) { toast(`กรุณากรอกความตึงอย่างน้อย ${req} ช่อง (กรอกแล้ว ${done})`,'red'); alarmBeep(); updateTensionNote(); return; }
+    const fromDept = deptVal('rc_from','rc_from_other');
+    if (!fromDept) { toast('กรุณาระบุหน่วยงานที่ส่ง','red'); alarmBeep(); return; }
     const body = {
       date: todayISO(), time: nowTime(),
-      from_dept: $('rc_from').value, to_dept: $('rc_to').value,
+      ref_doc_no: doc_no,
+      from_dept: fromDept, to_dept: $('rc_to').value,
       receiver_emp: $('rc_emp').value.trim(),
       blocks: window._recvBlocks.map(b=>({
         block_no: b.block_no, size_label: b.size_label==='-'?null:b.size_label, fabric_no: b.fabric_no==='-'?null:b.fabric_no,
@@ -1670,6 +1805,45 @@ async function pageExternalStretchReceiveResult(app, {doc_no}) {
 // ══════════════════════════════════════════════════════
 //  MODULE 4 – รับส่งภายนอก
 // ══════════════════════════════════════════════════════
+// ── ฐานข้อมูลรับส่งภายนอก: ตารางส่ง (DB3) + ตารางรับ (DB4) เชื่อมกันด้วยเลขที่เอกสาร ──
+async function pageExternalDatabase(app) {
+  const { data: sendAll } = await api('/api/stretch-send-rows');
+  const { data: recvAll } = await api('/api/stretch-receive-rows');
+  // แสดงเฉพาะใบส่งที่ยังไม่ได้รับ — ใบที่รับแล้วย้ายไปแสดงในตารางรับ (DB4) และค้นได้ที่ "บล็อกค้างส่งคืน"
+  const send3 = sendAll.filter(r => r.status !== 'received').map(r => ({ ...r, internal_codes:'-', revisions:'-', color_orders:'-', receiver_name:'-', storage_location:'-', remarks:'-' }));
+  const passLbl = v => v===1?'ผ่าน':v===0?'ไม่ผ่าน':'-';
+  app.innerHTML = `
+    <div class="topnav"><button class="back-btn" onclick="renderPage('external')">‹</button><h1>🗄️ ฐานข้อมูลรับส่งภายนอก</h1></div>
+    <div class="page">
+      <div class="card"><div class="row gap-sm" style="align-items:center;margin-bottom:.6rem">
+        <span class="card-title flex1" style="margin:0;border:none;padding:0">📤 ตารางส่งบล็อกขึงผ้า (DATA BASE 3)</span>
+        <button class="btn-success btn-sm" onclick="exportExtDB('send')">⬇️ Excel</button>
+      </div>${db3TableHtml(send3)}</div>
+
+      <div class="card"><div class="row gap-sm" style="align-items:center;margin-bottom:.6rem">
+        <span class="card-title flex1" style="margin:0;border:none;padding:0">📥 ตารางรับบล็อกขึงผ้า (DATA BASE 4)</span>
+        <button class="btn-success btn-sm" onclick="exportExtDB('recv')">⬇️ Excel</button>
+      </div>
+        <div class="table-scroll"><table class="db1"><thead><tr>
+          <th>วันที่</th><th>เลขที่เอกสาร (รับ)</th><th>อ้างอิงใบส่ง (OU)</th><th>เลขที่บล็อก</th><th>ขนาดเฟรม</th><th>เบอร์ผ้า</th><th>ความตึง (นิวตัน)</th><th>บล็อกบิดงอ</th><th>ขนาดเฟรม</th>
+        </tr></thead><tbody>${recvAll.length?recvAll.map(r=>`<tr>
+          <td>${fmtDate(r.date)}</td><td><strong>${r.doc_no}</strong></td><td>${r.ref_doc_no?`<strong style="color:var(--primary)">${r.ref_doc_no}</strong>`:'-'}</td><td><strong>${r.block_no}</strong></td>
+          <td>${r.size_label||'-'}</td><td>${r.fabric_no||'-'}</td><td>${r.tension_value ?? '-'}</td>
+          <td>${passLbl(r.twist_pass)}</td><td>${passLbl(r.frame_pass)}</td>
+        </tr>`).join(''):`<tr><td colspan="9" class="no-data">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>
+      </div>
+    </div>`;
+  window.exportExtDB = (kind) => {
+    if (kind==='send') {
+      const data = send3.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร':r.doc_no,'เลขที่บล็อก':r.block_no,'รหัสภายใน':r.internal_codes,'หน่วยงาน':r.from_dept,'ผู้ส่ง':r.sender_name,'Revision':r.revisions,'สี':r.color_orders,'ผู้รับ':r.receiver_name,'หน่วยงานถึง':r.to_dept,'ที่จัดเก็บ':r.storage_location,'หมายเหตุ':r.remarks,'สถานะ':r.status==='received'?'':'รอรับ'}));
+      styledXlsx(data,'DB3','ตารางส่งบล็อกขึงผ้า.xlsx');
+    } else {
+      const data = recvAll.map(r=>({'วันที่':fmtDate(r.date),'เลขที่เอกสาร(รับ)':r.doc_no,'อ้างอิงใบส่ง(OU)':r.ref_doc_no||'-','เลขที่บล็อก':r.block_no,'ขนาดเฟรม':r.size_label,'เบอร์ผ้า':r.fabric_no,'ความตึง':r.tension_value,'บล็อกบิดงอ':passLbl(r.twist_pass),'ขนาดเฟรม(ตรวจ)':passLbl(r.frame_pass)}));
+      styledXlsx(data,'DB4','ตารางรับบล็อกขึงผ้า.xlsx');
+    }
+  };
+}
+
 function pageExternal(app) {
   app.innerHTML = `
     <div class="topnav">
@@ -1687,6 +1861,11 @@ function pageExternal(app) {
         <div class="hc-title">รับบล็อกขึงผ้า</div>
         <div class="hc-sub">รับบล็อกที่ขึงผ้าแล้ว</div>
       </div>
+      ${canViewTables()?`<div class="home-card" onclick="renderPage('externalDatabase')">
+        <div class="hc-icon">🗄️</div>
+        <div class="hc-title">ฐานข้อมูล</div>
+        <div class="hc-sub">ตารางส่ง/รับ · Export Excel</div>
+      </div>`:''}
     </div>`;
 }
 
@@ -1840,10 +2019,12 @@ function pageSearch(app) {
   window.searchBlock = async () => {
     const no = $('q_block').value.trim();
     if (!no) return;
-    const { data } = await api(`/api/search/block/${no}`);
+    const { data } = await api(`/api/block-history/${encodeURIComponent(no)}`);
     const el = $('r_block');
-    if (!data.block) { el.innerHTML = `<div class="result-empty">😕 ไม่พบบล็อก ${no}</div>`; return; }
+    if (!data.block) { el.innerHTML = `<div class="result-empty">😕 ไม่พบบล็อก ${no}</div>`; alarmBeep(); return; }
     const b = data.block;
+    const modIcon = m => m.includes('ล้าง')?'🧹':m.includes('ร้องขอ')?'🖼️':m.includes('จัดเตรียม')?'🧰':m.includes('ส่งบล็อกขึงผ้า')||m.includes('ส่งออก')?'📤':m.includes('รับบล็อกขึงผ้า')||m.includes('รับเข้า')?'📥':'📄';
+    const evs = data.events || [];
     el.innerHTML = `
       <div class="result-card">
         <div class="rc-head">
@@ -1852,29 +2033,43 @@ function pageSearch(app) {
         </div>
         <div class="rc-stats">
           <div class="stat-pill"><span class="sp-l">ขนาด</span><span class="sp-v">${b.size_label||'-'}</span></div>
+          <div class="stat-pill"><span class="sp-l">เบอร์ผ้า</span><span class="sp-v">${b.fabric_no||'-'}</span></div>
           <div class="stat-pill"><span class="sp-l">ที่จัดเก็บ</span><span class="sp-v">${b.location||'-'}</span></div>
           <div class="stat-pill"><span class="sp-l">หน่วยงาน</span><span class="sp-v">${b.current_dept||'-'}</span></div>
         </div>
       </div>
-      ${data.pressHistory.length?`<details><summary style="cursor:pointer;color:var(--muted)">ประวัติร้องขออัด (${data.pressHistory.length})</summary>
-        ${data.pressHistory.map(h=>`<div class="history-entry">${h.doc_no} · ${h.date} · ${h.status}</div>`).join('')}
-      </details>`:''}
-      ${data.moveHistory.length?`<details><summary style="cursor:pointer;color:var(--muted)">ประวัติการขนส่ง (${data.moveHistory.length})</summary>
-        ${data.moveHistory.map(h=>`<div class="history-entry">${h.doc_no} · ${h.doc_type} · ${h.doc_date}</div>`).join('')}
-      </details>`:''}
-      ${data.extHistory.length?`<details><summary style="cursor:pointer;color:var(--muted)">ประวัติรับส่งภายนอก (${data.extHistory.length})</summary>
-        ${data.extHistory.map(h=>`<div class="history-entry">${h.doc_no} · ${h.doc_type} · ${h.doc_date}</div>`).join('')}
-      </details>`:''}`;
+      <div class="bh-title">🔗 ประวัติครบวงจร (${evs.length} รายการ) — เชื่อมทุกตารางด้วยเลขบล็อก</div>
+      ${evs.length ? `<div class="bh-timeline">${evs.map(e=>`
+        <div class="bh-item ${e.page?'bh-click':''}" ${e.page?`onclick="renderPage('${e.page}',{doc_no:'${e.doc_no}'})"`:''}>
+          <div class="bh-ico">${modIcon(e.module)}</div>
+          <div class="bh-body">
+            <div class="bh-mod">${e.module}${e.status?` <span class="badge ${statusBadgeS[e.status]||'badge-gray'}" style="font-size:.62rem">${e.status}</span>`:''}</div>
+            <div class="bh-doc">${e.doc_no}</div>
+            <div class="bh-sub">${e.date||'-'}${e.detail?' · '+e.detail:''}${e.person?' · '+e.person:''}</div>
+          </div>
+          ${e.page?'<span class="chevron">›</span>':''}
+        </div>`).join('')}</div>` : `<div class="no-data">ยังไม่มีประวัติการใช้งานบล็อกนี้</div>`}`;
   };
 
   window.searchCode = async () => {
     const code = $('q_code').value.trim();
     if (!code) return;
-    const { data } = await api(`/api/search/code?code=${encodeURIComponent(code)}`);
-    $('r_code').innerHTML = data.length === 0 ? '<p style="color:var(--muted)">ไม่พบข้อมูล</p>' :
-      `<div class="table-scroll"><table><thead><tr><th>รหัสภายใน</th><th>สี</th><th>Rev</th><th>ผ้า</th><th>บล็อกเดิม</th><th>บล็อกใหม่</th><th>สถานะ</th></tr></thead><tbody>
-        ${data.map(r=>`<tr><td>${r.internal_code}</td><td>${r.color_order}</td><td>${r.revision}</td><td>${r.fabric_no}</td><td>${r.old_block_no}</td><td>${r.new_block_no||'-'}</td><td>${r.status}</td></tr>`).join('')}
-      </tbody></table></div>`;
+    const { data } = await api(`/api/code-history?code=${encodeURIComponent(code)}`);
+    const el = $('r_code');
+    const evs = data.events || [];
+    if (!evs.length) { el.innerHTML = `<div class="result-empty">😕 ไม่พบรหัสภายใน ${code}</div>`; alarmBeep(); return; }
+    el.innerHTML = `
+      <div class="bh-title">🔗 ประวัติรหัสภายใน <b style="color:var(--text)">${code}</b> (${evs.length} รายการ)</div>
+      <div class="bh-timeline">${evs.map(e=>`
+        <div class="bh-item ${e.page?'bh-click':''}" ${e.page?`onclick="renderPage('${e.page}',{doc_no:'${e.doc_no}'})"`:''}>
+          <div class="bh-ico">${e.module.includes('ร้องขอ')?'🖼️':e.module.includes('จัดเตรียม')?'🧰':e.module.includes('ส่ง')?'📤':e.module.includes('รับ')?'📥':'📄'}</div>
+          <div class="bh-body">
+            <div class="bh-mod">${e.module}${e.status?` <span class="badge ${statusBadgeS[e.status]||'badge-gray'}" style="font-size:.62rem">${e.status}</span>`:''}</div>
+            <div class="bh-doc">${e.doc_no}</div>
+            <div class="bh-sub">${e.date||'-'}${e.detail?' · '+e.detail:''}${e.person?' · '+e.person:''}</div>
+          </div>
+          ${e.page?'<span class="chevron">›</span>':''}
+        </div>`).join('')}</div>`;
   };
 
   window.searchPending = async () => {
@@ -2369,29 +2564,45 @@ async function startCameraScan() {
 function qrMainCode(raw) {
   return String(raw || '').split(/[\r\n\t]+/)[0].trim();
 }
-// แยกข้อมูล QR ฟิล์ม (หลายบรรทัด) ลงช่อง — รองรับ label เช่น "color: 2", "Rev : 1"
-// บรรทัดแรก = รหัสภายใน · หลัง "color:" = ลำดับสี · หลัง "Rev:" = Rev · บรรทัดที่เหลือ = เบอร์ผ้า
-// คืนค่า flags บอกว่าอ่านครบช่องไหนบ้าง
+// แยกข้อมูล QR ฟิล์ม (หลายบรรทัด) ลงช่อง — ตัดคำ "color:" / "Rev:" ออก เอาแค่ค่า
+// บรรทัดแรก = รหัสภายใน · หลัง "color:" = ลำดับสี · หลัง "Rev:" = Rev · บรรทัดที่ไม่มี label = เบอร์ผ้า
 function parseFilmQR(raw, film) {
-  const lines = String(raw || '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
-  let color = '', rev = '', fabricLine = '';
+  const text = String(raw || '');
+  const lines = text.split(/[\r\n\t]+/).map(s => s.trim()).filter(Boolean);
   if (lines[0]) film.internal_code = lines[0];
-  for (let i = 1; i < lines.length; i++) {
-    const ln = lines[i];
-    const mc = ln.match(/^color\s*:?\s*(.*)$/i);
-    const mr = ln.match(/^rev\.?\s*:?\s*(.*)$/i);
-    if (mc) color = mc[1].trim();
-    else if (mr) rev = mr[1].trim();
-    else if (!fabricLine) fabricLine = ln;
-  }
+  // ดึงค่าหลัง "color:" และ "Rev:" ด้วย regex (ตัด label ทิ้ง เอาแค่ตัวเลข/ค่า)
+  const mc = text.match(/color\s*:\s*([^\r\n\t]+)/i);
+  const mr = text.match(/rev\.?\s*:\s*([^\r\n\t]+)/i);
+  const color = mc ? mc[1].trim() : '';
+  const rev = mr ? mr[1].trim() : '';
   if (color) film.color_order = color;
   if (rev) film.revision = rev;
+  // เบอร์ผ้า = บรรทัด (นอกจากบรรทัดแรก) ที่ไม่มี label color/rev
+  let fabricLine = '';
+  for (let i = 1; i < lines.length; i++) {
+    if (/^color\s*:/i.test(lines[i]) || /^rev\.?\s*:/i.test(lines[i])) continue;
+    fabricLine = lines[i]; break;
+  }
   if (fabricLine) {
     const ids = (master.fabric_types || []).map(t => t.id);
     film.fabric_no = ids.find(id => id === fabricLine) || ids.find(id => id.startsWith(fabricLine)) || ids.find(id => id.includes(fabricLine)) || fabricLine;
   }
   return { internal_code: !!film.internal_code, color: !!color, revision: !!rev, fabric: !!fabricLine };
 }
+// สแกนฟิล์มพร้อมเช็ครหัสภายในซ้ำ (arr = อาเรย์ฟิล์ม, i = index, need = ช่องที่ต้องครบ)
+function filmScanDedup(arr, i, raw, need, rerender) {
+  const tmp = {};
+  const fl = parseFilmQR(raw, tmp);
+  if (tmp.internal_code && arr.some((f, j) => j !== i && (f.internal_code || '').trim() === tmp.internal_code.trim())) {
+    alarmBeep();
+    toast('❌ รหัสภายในซ้ำ: ' + tmp.internal_code, 'red');
+    return;   // ไม่เพิ่มข้อมูล
+  }
+  Object.assign(arr[i], tmp);
+  rerender();
+  filmScanFeedback(fl, need);
+}
+window.filmScanDedup = filmScanDedup;
 // เสียง/แจ้งเตือนหลังสแกนฟิล์ม (need = ช่องที่ต้องครบ)
 function filmScanFeedback(flags, need) {
   const ok = need.every(k => flags[k]);
@@ -2457,6 +2668,19 @@ async function api(url, method = 'GET', body = null) {
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'เกิดข้อผิดพลาด');
   return json;
+}
+
+// เลือก "อื่นๆ" ในช่องหน่วยงาน → สไลด์ช่องกรอกเพิ่ม
+window.toggleDeptOther = (selId, wrapId, inputId) => {
+  const isOther = document.getElementById(selId).value === '__other__';
+  document.getElementById(wrapId).classList.toggle('show', isOther);
+  if (isOther) setTimeout(() => document.getElementById(inputId).focus(), 220);
+  else document.getElementById(inputId).value = '';
+};
+// คืนค่าหน่วยงาน (ถ้าเลือกอื่นๆ ใช้ค่าที่กรอกเอง)
+function deptVal(selId, otherId) {
+  const v = document.getElementById(selId).value;
+  return v === '__other__' ? document.getElementById(otherId).value.trim() : v;
 }
 
 let _empLookupTimer = null;

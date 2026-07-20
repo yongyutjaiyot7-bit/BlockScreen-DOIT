@@ -32,6 +32,30 @@
   .note{font-size:.76rem;color:#9ca3af;text-align:center;margin-top:1rem;line-height:1.6}
   .badge{display:inline-block;background:#fee2e2;color:#9f1239;font-weight:700;font-size:.7rem;
     padding:.2rem .6rem;border-radius:99px;margin-bottom:.5rem}
+  /* ── ตัวอย่างเปิดแหล่งที่ไม่รู้จัก ── */
+  .unk{margin-top:.9rem;background:#fffdf5;border:1px solid #fde68a;border-radius:16px;padding:1.1rem}
+  .unk-head{font-weight:800;color:#b45309;font-size:.95rem;margin-bottom:.5rem}
+  .unk-desc{font-size:.82rem;color:#4b5563;line-height:1.65}
+  .unk-arrow{text-align:center;color:#f59e0b;font-weight:700;font-size:.78rem;margin:.7rem 0}
+  .unk-path{font-size:.74rem;color:#6b7280;margin-top:.7rem;background:#f3f4f6;border-radius:10px;padding:.55rem .7rem;line-height:1.6}
+  .mock{border-radius:14px;box-shadow:0 6px 16px rgba(17,24,39,.12)}
+  .mock-dialog{background:#fff;border:1px solid #e5e7eb;padding:1rem;margin-top:.9rem}
+  .m-title{font-weight:800;color:#111827;font-size:.9rem;margin-bottom:.35rem}
+  .m-body{font-size:.8rem;color:#6b7280;line-height:1.55}
+  .m-actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.9rem}
+  .m-btn{padding:.4rem .9rem;border-radius:9px;font-size:.82rem;font-weight:700}
+  .m-ghost{color:#6b7280}
+  .m-primary{background:#4f46e5;color:#fff}
+  .mock-toggle{background:#fff;border:1px solid #e5e7eb;display:flex;align-items:center;gap:.7rem;padding:.8rem .9rem}
+  .mt-ico{font-size:1.5rem}
+  .mt-txt{flex:1}
+  .mt-app{font-weight:700;font-size:.88rem;color:#111827}
+  .mt-sub{font-size:.74rem;color:#9ca3af}
+  .switch{width:46px;height:27px;border-radius:99px;background:#d1d5db;position:relative;flex-shrink:0;transition:.2s}
+  .switch.on{background:#22c55e}
+  .switch .knob{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);transition:.2s}
+  .switch.on .knob{left:22px}
 </style>
 </head>
 <body>
@@ -51,10 +75,32 @@
       <ol>
         <li>กดปุ่ม <b>"ดาวน์โหลด &amp; ติดตั้งแอป"</b> ด้านบน</li>
         <li>เมื่อดาวน์โหลดเสร็จ เปิดไฟล์ <b>blockscreen.apk</b></li>
-        <li>หากขึ้นเตือน ให้กด <b>"ตั้งค่า"</b> แล้วเปิด <b>"อนุญาตติดตั้งจากแหล่งนี้"</b></li>
+        <li>หากขึ้นเตือน ให้เปิดอนุญาต <b>"แหล่งที่ไม่รู้จัก"</b> (ดูตัวอย่างด้านล่าง)</li>
         <li>กลับมากด <b>"ติดตั้ง" (Install)</b></li>
         <li>เปิดแอป แล้วเข้าสู่ระบบด้วยชื่อผู้ใช้ที่ได้รับ</li>
       </ol>
+    </div>
+
+    <!-- ── ตัวอย่างภาพ: เปิด "แหล่งที่ไม่รู้จัก" ── -->
+    <div class="unk">
+      <div class="unk-head">🔓 ตัวอย่าง: เปิด "ติดตั้งจากแหล่งที่ไม่รู้จัก"</div>
+      <p class="unk-desc">เพราะแอปนี้เป็นแอปภายในบริษัท (ไม่ได้มาจาก Play Store) Android จะถามครั้งแรกครั้งเดียว — ตั้งค่าให้เฉพาะ<b>แอปที่ใช้เปิดไฟล์</b> (เช่น Chrome หรือ ตัวจัดการไฟล์) ปลอดภัย ไม่กระทบทั้งเครื่อง</p>
+
+      <!-- mock dialog เตือน -->
+      <div class="mock mock-dialog">
+        <div class="m-title">⚠️ เพื่อความปลอดภัย</div>
+        <div class="m-body">โทรศัพท์ของคุณไม่ได้รับอนุญาตให้ติดตั้งแอปที่ไม่รู้จักจากแหล่งนี้</div>
+        <div class="m-actions"><span class="m-btn m-ghost">ยกเลิก</span><span class="m-btn m-primary">ตั้งค่า →</span></div>
+      </div>
+      <div class="unk-arrow">▼ กด "ตั้งค่า" แล้วเปิดสวิตช์ ▼</div>
+      <!-- mock toggle -->
+      <div class="mock mock-toggle">
+        <div class="mt-ico">🌐</div>
+        <div class="mt-txt"><div class="mt-app">Chrome / ตัวจัดการไฟล์</div><div class="mt-sub">อนุญาตจากแหล่งนี้</div></div>
+        <div class="switch on"><span class="knob"></span></div>
+      </div>
+      <p class="unk-desc" style="margin-top:.7rem">จากนั้นกดปุ่มย้อนกลับ แล้วกด <b>"ติดตั้ง"</b> ได้เลย ✅</p>
+      <p class="unk-path">เมนู: <b>ตั้งค่า › แอป › การเข้าถึงพิเศษ › ติดตั้งแอปที่ไม่รู้จัก</b> (ชื่อเมนูอาจต่างกันตามรุ่นมือถือ)</p>
     </div>
 
     <div class="note">

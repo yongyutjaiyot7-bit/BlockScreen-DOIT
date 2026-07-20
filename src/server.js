@@ -11,9 +11,10 @@ import {
   createPressRequest, listPressRequests, getPressRequest, saveInspection, saveBlockStorage, listStoredPress,
   summitPressInspect, receivePress,
   createStretchSend, listStretchSendRows, createStretchReceive, listStretchReceiveRows,
+  listStretchSendPending, getStretchSendDoc,
   createInternalDoc, getInternalDoc, listInternalDocs, listInternalDocsByStatus, completeTransport, completeStore, listInternalStored,
   createExternalDoc, getExternalDoc, listExternalDocs,
-  searchByBlockNo, searchByInternalCode, searchExternalPending,
+  searchByBlockNo, searchByInternalCode, searchExternalPending, getBlockHistory, getInternalCodeHistory,
   bulkUpsertBlocks, bulkUpsertEmployees, deleteBlock, updateBlock,
   listMaster, masterUpsert, masterDelete,
   login, verifyToken, listUsers, upsertUser, deleteUser,
@@ -140,6 +141,12 @@ app.post('/api/press-store', wrap((req, res) => {
 // ---------- ส่งบล็อกขึงผ้า ----------
 app.post('/api/stretch-send', wrap((req, res) => ok(res, createStretchSend(req.body || {}))));
 app.get('/api/stretch-send-rows', wrap((req, res) => ok(res, listStretchSendRows())));
+app.get('/api/stretch-send-pending', wrap((req, res) => ok(res, listStretchSendPending())));
+app.get('/api/stretch-send-doc', wrap((req, res) => {
+  const d = getStretchSendDoc(req.query.doc_no);
+  if (!d) return err(res, 'ไม่พบใบส่ง', 404);
+  ok(res, d);
+}));
 
 // ---------- รับบล็อกขึงผ้า ----------
 app.post('/api/stretch-receive', wrap((req, res) => ok(res, createStretchReceive(req.body || {}))));
@@ -170,6 +177,8 @@ app.post('/api/external/:type', wrap((req, res) => ok(res, createExternalDoc(req
 
 // ---------- SEARCH ----------
 app.get('/api/search/block/:no', wrap((req, res) => ok(res, searchByBlockNo(req.params.no))));
+app.get('/api/block-history/:no', wrap((req, res) => ok(res, getBlockHistory(req.params.no))));
+app.get('/api/code-history', wrap((req, res) => ok(res, getInternalCodeHistory(req.query.code, req.query.color_order))));
 app.get('/api/search/code', wrap((req, res) => ok(res, searchByInternalCode(req.query.code, req.query.color_order))));
 app.get('/api/search/pending-external', wrap((req, res) => ok(res, searchExternalPending())));
 

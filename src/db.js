@@ -146,6 +146,7 @@ try { getDb().run('ALTER TABLE internal_doc_blocks ADD COLUMN frame_pass INTEGER
 try { getDb().run('ALTER TABLE internal_docs ADD COLUMN prep_emp TEXT'); } catch {}
 try { getDb().run('ALTER TABLE internal_docs ADD COLUMN transport_emp TEXT'); } catch {}
 try { getDb().run('ALTER TABLE internal_docs ADD COLUMN store_emp TEXT'); } catch {}
+try { getDb().run('ALTER TABLE internal_docs ADD COLUMN ref_doc_no TEXT'); } catch {}
 save();
 
 // ── Authentication / Users ──
@@ -546,22 +547,51 @@ export function listStretchSendRows() {
     all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).forEach(b => {
       const blk = getBlock(b.block_no);
       out.push({ date: d.doc_date, doc_no: d.doc_no, block_no: b.block_no, size_label: blk?.size_label || '',
-        from_dept: d.from_dept, sender_name: sender, to_dept: d.to_dept });
+        from_dept: d.from_dept, sender_name: sender, to_dept: d.to_dept,
+        status: d.status === 'received' ? 'received' : 'sent' });
     });
   });
   return out;
 }
-// รับบล็อกขึงผ้า (IN prefix)
+// รายการใบส่ง OU ที่ยังไม่ได้รับ (Folder หน้ารับบล็อกขึงผ้า)
+export function listStretchSendPending() {
+  const docs = all("SELECT * FROM internal_docs WHERE doc_type='stretch_send' AND status='sent' ORDER BY doc_no DESC LIMIT 300");
+  return docs.map(d => ({
+    ...d,
+    sender_name: empFirstName(d.emp_code),
+    blocks: all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).map(b => b.block_no),
+  }));
+}
+// ดึงใบส่ง OU 1 ใบ พร้อมบล็อกที่ส่ง (สำหรับหน้าฟอร์มรับ)
+export function getStretchSendDoc(doc_no) {
+  const doc = get("SELECT * FROM internal_docs WHERE doc_no=? AND doc_type='stretch_send'", [doc_no]);
+  if (!doc) return null;
+  doc.sender_name = empFirstName(doc.emp_code);
+  doc.blocks = all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [doc_no]).map(b => {
+    const blk = getBlock(b.block_no);
+    return { block_no: b.block_no, size_label: blk?.size_label || '', fabric_no: blk?.fabric_no || '' };
+  });
+  return doc;
+}
+// รับบล็อกขึงผ้า (IN prefix) — อ้างอิงใบส่ง OU และตรวจสอบว่าบล็อกอยู่ในใบส่งจริง
 export function createStretchReceive(data) {
   const ts = now();
+  const ref = data.ref_doc_no || null;
+  if (ref) {
+    const sent = all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [ref]).map(b => b.block_no);
+    for (const b of (data.blocks || [])) {
+      if (!sent.includes(b.block_no)) throw new Error('บล็อก ' + b.block_no + ' ไม่มีในใบส่ง ' + ref);
+    }
+  }
   const doc_no = nextDatedDocNo('IN', 'internal_docs', data.date || ts.slice(0, 10));
-  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
-    [doc_no, 'stretch_receive', data.from_dept||null, data.to_dept||null, data.receiver_emp||null,
+  run('INSERT INTO internal_docs(doc_no,doc_type,from_dept,to_dept,emp_code,ref_doc_no,doc_date,doc_time,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    [doc_no, 'stretch_receive', data.from_dept||null, data.to_dept||null, data.receiver_emp||null, ref,
      data.date||ts.slice(0,10), data.time||ts.slice(11,16), 'received', ts]);
   (data.blocks||[]).forEach(b => run('INSERT INTO internal_doc_blocks(id,doc_no,block_no,fabric_no,size_label,tension_value,twist_pass,frame_pass) VALUES(?,?,?,?,?,?,?,?)',
     [uuid(), doc_no, b.block_no, b.fabric_no||null, b.size_label||null, b.tension_value||null,
      b.twist_pass==null?null:(b.twist_pass?1:0), b.frame_pass==null?null:(b.frame_pass?1:0)]));
-  return { doc_no, count: (data.blocks||[]).length };
+  if (ref) run("UPDATE internal_docs SET status='received' WHERE doc_no=?", [ref]);   // ปิดใบส่ง OU
+  return { doc_no, count: (data.blocks||[]).length, ref_doc_no: ref };
 }
 export function listStretchReceiveRows() {
   const docs = all("SELECT * FROM internal_docs WHERE doc_type='stretch_receive' ORDER BY doc_no DESC LIMIT 500");
@@ -569,7 +599,7 @@ export function listStretchReceiveRows() {
   docs.forEach(d => {
     const recv = empFirstName(d.emp_code);
     all('SELECT * FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).forEach(b => {
-      out.push({ date: d.doc_date, doc_no: d.doc_no, block_no: b.block_no, size_label: b.size_label||'', fabric_no: b.fabric_no||'',
+      out.push({ date: d.doc_date, doc_no: d.doc_no, ref_doc_no: d.ref_doc_no||'', block_no: b.block_no, size_label: b.size_label||'', fabric_no: b.fabric_no||'',
         tension_value: b.tension_value, twist_pass: b.twist_pass, frame_pass: b.frame_pass,
         from_dept: d.from_dept, receiver_name: recv, to_dept: d.to_dept });
     });
@@ -705,19 +735,81 @@ export function searchByBlockNo(block_no) {
     extHistory: all('SELECT ed.* FROM external_docs ed JOIN external_doc_blocks edb ON ed.doc_no=edb.doc_no WHERE edb.block_no=? ORDER BY ed.created_at DESC', [block_no]),
   };
 }
+// ── ประวัติบล็อกครบวงจร: เชื่อมทุกตารางด้วยเลขบล็อก (single source = ตาราง blocks) ──
+export function getBlockHistory(block_no) {
+  const block = getBlock(block_no);                 // ข้อมูลกลางตัวเดียว (ขนาด/ผ้า/สถานะ/ที่จัดเก็บ)
+  const events = [];
+  const emp = c => empFirstName(c) || '';
+  // 1) ล้าง/โค๊ตบล็อก
+  all('SELECT * FROM clean_docs WHERE block_no=? ORDER BY created_at DESC', [block_no]).forEach(r => {
+    events.push({ module: 'ล้าง/โค๊ตบล็อก', page: 'cleanDetail', doc_no: r.doc_no, date: r.date, ts: r.created_at,
+      status: '', detail: r.process_step || '', person: emp(r.emp1_code) });
+  });
+  // 2) ร้องขออัดบล็อก (บล็อกเดิม หรือ บล็อกใหม่)
+  all('SELECT * FROM press_requests WHERE old_block_no=? OR new_block_no=? ORDER BY created_at DESC', [block_no, block_no]).forEach(r => {
+    events.push({ module: 'ร้องขออัดบล็อก', page: 'pressDetail', doc_no: r.doc_no, date: r.date, ts: r.created_at,
+      status: r.status, detail: (r.old_block_no || '') + (r.new_block_no ? ' → ' + r.new_block_no : ''), person: emp(r.requester_emp) });
+  });
+  // 3) รับส่งภายใน (จัดเตรียม/ส่ง-รับขึงผ้า)
+  const typeLabel = { prepare: 'จัดเตรียม (รับส่งภายใน)', stretch_send: 'ส่งบล็อกขึงผ้า', stretch_receive: 'รับบล็อกขึงผ้า' };
+  all(`SELECT idc.* FROM internal_docs idc JOIN internal_doc_blocks idb ON idc.doc_no=idb.doc_no
+       WHERE idb.block_no=? ORDER BY idc.created_at DESC`, [block_no]).forEach(r => {
+    events.push({ module: typeLabel[r.doc_type] || r.doc_type, page: '', doc_no: r.doc_no,
+      date: r.doc_date, ts: r.created_at, status: r.status || '',
+      detail: (r.from_dept || '') + (r.to_dept ? ' → ' + r.to_dept : ''), person: emp(r.emp_code) });
+  });
+  // 4) รับส่งภายนอก
+  all(`SELECT ed.* FROM external_docs ed JOIN external_doc_blocks edb ON ed.doc_no=edb.doc_no
+       WHERE edb.block_no=? ORDER BY ed.created_at DESC`, [block_no]).forEach(r => {
+    events.push({ module: r.doc_type === 'send_out' ? 'ส่งออก (ภายนอก)' : 'รับเข้า (ภายนอก)', page: '', doc_no: r.doc_no,
+      date: r.doc_date, ts: r.created_at, status: '', detail: (r.from_dept || '') + (r.to_dept ? ' → ' + r.to_dept : ''), person: emp(r.emp_code) });
+  });
+  events.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
+  return { block, events };
+}
+// ── ประวัติตามรหัสภายใน (internal_code): เชื่อมทุกที่ที่ปรากฏรหัสฟิล์มนี้ ──
+export function getInternalCodeHistory(code, color_order) {
+  code = String(code || '').trim();
+  const events = [];
+  const emp = c => empFirstName(c) || '';
+  const typeLabel = { prepare: 'จัดเตรียม (รับส่งภายใน)', stretch_send: 'ส่งบล็อกขึงผ้า', stretch_receive: 'รับบล็อกขึงผ้า' };
+  // 1) ร้องขออัดบล็อก (press_films)
+  let q = `SELECT pf.*, pr.date, pr.status, pr.old_block_no, pr.new_block_no, pr.requester_emp, pr.created_at
+           FROM press_films pf JOIN press_requests pr ON pf.doc_no=pr.doc_no WHERE pf.internal_code=?`;
+  const p = [code];
+  if (color_order) { q += ' AND pf.color_order=?'; p.push(color_order); }
+  all(q, p).forEach(r => events.push({
+    module: 'ร้องขออัดบล็อก', page: 'pressDetail', doc_no: r.doc_no, date: r.date, ts: r.created_at,
+    status: r.status, block_no: r.new_block_no || r.old_block_no, person: emp(r.requester_emp),
+    detail: `สี ${r.color_order || '-'} · Rev ${r.revision || '-'} · ผ้า ${r.fabric_no || '-'} · บล็อก ${r.old_block_no || ''}${r.new_block_no ? ' → ' + r.new_block_no : ''}` }));
+  // 2) จัดเตรียม (internal_doc_blocks เก็บ internal_code แบบคั่นด้วย comma)
+  all(`SELECT idc.*, idb.block_no, idb.internal_code, idb.color_order, idb.revision
+       FROM internal_docs idc JOIN internal_doc_blocks idb ON idc.doc_no=idb.doc_no
+       WHERE idb.internal_code LIKE ?`, ['%' + code + '%']).forEach(r => {
+    const list = String(r.internal_code || '').split(',').map(s => s.trim());
+    if (!list.includes(code)) return;                 // กันกรณี LIKE ชนบางส่วน
+    events.push({ module: typeLabel[r.doc_type] || r.doc_type, page: '', doc_no: r.doc_no, date: r.doc_date, ts: r.created_at,
+      status: r.status || '', block_no: r.block_no, person: emp(r.emp_code),
+      detail: `บล็อก ${r.block_no} · สี ${r.color_order || '-'} · Rev ${r.revision || '-'}` });
+  });
+  events.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
+  return { code, events };
+}
 export function searchByInternalCode(code, color_order) {
   let q = 'SELECT pf.*,pr.old_block_no,pr.new_block_no,pr.status FROM press_films pf JOIN press_requests pr ON pf.doc_no=pr.doc_no WHERE pf.internal_code=?';
   const p = [code];
   if (color_order) { q += ' AND pf.color_order=?'; p.push(color_order); }
   return all(q, p);
 }
+// บล็อกที่ส่งไป KTE/NOVA (ใบส่ง OU) แต่ยังไม่ได้รับคืน (ใบส่งยัง status='sent')
 export function searchExternalPending() {
-  return all(`SELECT ed.doc_no,ed.to_dept,ed.doc_date,edb.block_no,edb.frame_size
-    FROM external_docs ed JOIN external_doc_blocks edb ON ed.doc_no=edb.doc_no
-    WHERE ed.doc_type='send_out'
-    AND edb.block_no NOT IN (
-      SELECT edb2.block_no FROM external_docs ed2
-      JOIN external_doc_blocks edb2 ON ed2.doc_no=edb2.doc_no
-      WHERE ed2.doc_type='receive_in'
-    ) ORDER BY ed.doc_date DESC`);
+  const docs = all("SELECT * FROM internal_docs WHERE doc_type='stretch_send' AND status='sent' ORDER BY doc_date DESC, doc_no DESC");
+  const out = [];
+  docs.forEach(d => {
+    all('SELECT block_no FROM internal_doc_blocks WHERE doc_no=?', [d.doc_no]).forEach(b => {
+      const blk = getBlock(b.block_no);
+      out.push({ doc_no: d.doc_no, to_dept: d.to_dept, doc_date: d.doc_date, block_no: b.block_no, frame_size: blk?.size_label || '' });
+    });
+  });
+  return out;
 }
